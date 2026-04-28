@@ -1,0 +1,10 @@
+.git
+.gitignore
+backend/.env
+backend/.venv
+backend/**/__pycache__
+backend/**/*.pyc
+web/node_modules
+web/.next
+web/out
+web/.env.local
