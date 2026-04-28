@@ -1,0 +1,14 @@
+backend/.env
+backend/database/dev_auth_users.json
+backend/.venv/
+backend/**/__pycache__/
+backend/**/*.pyc
+web/.env.local
+web/node_modules/
+web/.next/
+web/out/
+web/*.tsbuildinfo
+web/.git.disabled/
+.env
+.env.*
+!.env.example
