@@ -63,6 +63,11 @@ app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(months_router, prefix="/months", tags=["months"])
 
 
+@app.get("/")
+def root():
+    return {"message": "API is running"}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
