@@ -2,6 +2,7 @@
 HRIS API — FastAPI entrypoint (Phase 1: attendance upload + report).
 """
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -31,13 +32,23 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Allow local Next.js dev server
+_default_cors_origins = [
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+]
+_env_cors_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+_frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+if _frontend_url:
+    _env_cors_origins.append(_frontend_url)
+
+# Allow local Next.js dev server and configured production frontend domains.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:3000",
-        "http://localhost:3000",
-    ],
+    allow_origins=[*_default_cors_origins, *_env_cors_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
