@@ -1,17 +1,9 @@
 import type { NextConfig } from "next";
 
-const backendTarget =
-  process.env.BACKEND_PROXY_TARGET?.replace(/\/$/, "") || "http://127.0.0.1:8000";
-
-const nextConfig: NextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${backendTarget}/:path*`,
-      },
-    ];
-  },
-};
+/**
+ * `/api/*` is proxied at request time by `app/api/[[...slug]]/route.ts`
+ * using `BACKEND_PROXY_TARGET` or `NEXT_PUBLIC_API_URL` (see `.env.example`).
+ */
+const nextConfig: NextConfig = {};
 
 export default nextConfig;

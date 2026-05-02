@@ -49,7 +49,21 @@ async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
   }
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(body?.detail || body?.message || res.statusText || "Request failed");
+    const detail = body?.detail;
+    let msg: string;
+    if (typeof detail === "string") {
+      msg = detail;
+    } else if (Array.isArray(detail)) {
+      msg = detail.map((x: { msg?: string }) => x?.msg || JSON.stringify(x)).join("; ");
+    } else if (body?.message) {
+      msg = String(body.message);
+    } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+      msg =
+        "Cannot reach the API server (bad gateway). On Vercel, set BACKEND_PROXY_TARGET or NEXT_PUBLIC_API_URL to your live FastAPI base URL, then redeploy.";
+    } else {
+      msg = res.statusText || `HTTP ${res.status}`;
+    }
+    throw new Error(msg || "Request failed");
   }
   return body as T;
 }

@@ -29,7 +29,7 @@ The repository is a **monorepo** with two main parts:
 **Request flow (typical):**
 
 1. Browser loads the Next.js app (port **3000** by default).
-2. Authenticated pages call the API via **`/api/...`** on the **same origin** (Next.js **rewrites** `/api/*` to the FastAPI server, default **`http://127.0.0.1:8000`**), avoiding CORS issues in local development.
+2. Authenticated pages call the API via **`/api/...`** on the **same origin**. A **catch-all Route Handler** (`web/app/api/[[...slug]]/route.ts`) forwards each request at **runtime** to FastAPI using **`BACKEND_PROXY_TARGET`** or, if unset, **`NEXT_PUBLIC_API_URL`** when it is an absolute `http(s)` URL—otherwise **`http://127.0.0.1:8000`** for local dev. This avoids baking a wrong backend URL into the build (a common Vercel login failure).
 3. FastAPI validates **JWT** (backend-owned auth), applies **role / ownership** rules, and talks to **Supabase** using the **REST (PostgREST)** interface with the **service role** key (server-side only).
 
 **Public attendance entry** uses `publicApiFetch` against `/api` as well, so the public page stays same-origin.
@@ -83,7 +83,7 @@ HRIS-APP/
 │   ├── app/                    # Next.js routes (App Router)
 │   ├── components/             # layout (AppShell, Header, Sidebar), attendance, etc.
 │   ├── lib/                    # api, auth, envApi
-│   ├── next.config.ts          # /api → FastAPI rewrite
+│   ├── next.config.ts          # Next.js config (API proxy is `app/api/[[...slug]]/route.ts`)
 │   └── middleware.ts           # route protection hints if present
 └── SOFTWARE_DETAILS.md         # This file
 ```
@@ -122,7 +122,7 @@ HRIS-APP/
 
 ### 5.5 API base resolution
 
-- **`web/lib/envApi.ts`** — `effectiveApiBase()` prefers same-origin **`/api`** in browser where appropriate so dev rewrites work even if `NEXT_PUBLIC_API_URL` points at a different host than the page origin.
+- **`web/lib/envApi.ts`** — `effectiveApiBase()` prefers same-origin **`/api`** in the browser when `NEXT_PUBLIC_API_URL` points at another origin, so traffic goes through the server proxy and avoids CORS.
 
 ---
 
@@ -229,7 +229,7 @@ The dashboard page polls **`/dashboard/summary`** on an interval and on tab visi
 | `CORS_ORIGINS` | Optional comma-separated extra allowed origins. |
 | `FRONTEND_URL` | Used in CORS and in **`/dashboard/attendance-entry-url`** default base. |
 | `ATTENDANCE_ENTRY_SECRET` | If set, public attendance endpoints require matching `?key=` / body `key`. |
-| `BACKEND_PROXY_TARGET` | Used by Next rewrites (see `web/next.config.ts`) — default `http://127.0.0.1:8000`. |
+| `BACKEND_PROXY_TARGET` | Optional. Preferred server-side proxy target for `/api/*` (same as FastAPI base URL, no trailing slash). |
 
 ### Frontend (`web/.env` / `NEXT_PUBLIC_*`)
 
@@ -244,7 +244,7 @@ The dashboard page polls **`/dashboard/summary`** on an interval and on tab visi
 1. **Supabase:** Run SQL scripts in `backend/database/` as documented in each file (e.g. `phase2_schema.sql`, `payroll_leave_update.sql`, `holidays.sql`, `attendance_link_entries.sql`) in the Supabase SQL editor or `psql`.
 2. **Backend:** Create venv, `pip install -r requirements.txt`, set `.env`, run `uvicorn main:app --reload` from `backend/` (or configured cwd).
 3. **Frontend:** `cd web && npm install && npm run dev` (port **3000**).
-4. Ensure **`next.config.ts`** rewrite target matches the API host/port.
+4. On **Vercel**, set **`BACKEND_PROXY_TARGET`** or **`NEXT_PUBLIC_API_URL`** to your public FastAPI base URL (no trailing slash) so `/api/*` proxying works.
 
 ---
 
