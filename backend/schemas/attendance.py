@@ -96,3 +96,7 @@ class AttendanceMonthOut(BaseModel):
     month: int
     year: int
     rows: List[EmployeeAttendanceRowOut]
+    holidays: Dict[str, str] = Field(
+        default_factory=dict,
+        description="YYYY-MM-DD → holiday name for this month (auto-present when no punches)",
+    )

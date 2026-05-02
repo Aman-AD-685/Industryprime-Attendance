@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict
+from typing import Dict, Set
 
 from database.supabase_client import SupabaseRest, get_supabase
 
@@ -37,8 +37,26 @@ def get_dashboard_summary(
     except RuntimeError:
         attendance_data = []
 
-    present_emp_codes = {r.get("employee_id") for r in attendance_data}
-    present_today = len(present_emp_codes)
+    present_ids: Set[str] = set()
+    for r in attendance_data:
+        eid = r.get("employee_id")
+        if eid:
+            present_ids.add(str(eid))
+    try:
+        link_rows = supabase.select(
+            table="attendance_link_entries",
+            select="user_id",
+            where_eq={"date": str(d)},
+            limit=500,
+        )
+        for r in link_rows or []:
+            uid = r.get("user_id")
+            if uid:
+                present_ids.add(str(uid))
+    except RuntimeError:
+        pass
+
+    present_today = len(present_ids)
     late = sum(1 for r in attendance_data if (r.get("late_minutes") or 0) > 0)
     absent = max(0, total_employees - present_today)
 

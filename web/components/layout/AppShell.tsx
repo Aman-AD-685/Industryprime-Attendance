@@ -8,7 +8,8 @@ import Sidebar from "./Sidebar";
 import { cn } from "@/lib/cn";
 import { clearAuth, getCurrentUser, getStoredToken, type AuthUser } from "@/lib/auth";
 
-const publicRoutes = new Set(["/login", "/signup"]);
+const publicRoutes = new Set(["/login", "/signup", "/attendance-entry"]);
+const redirectAuthedPublicRoutes = new Set(["/login", "/signup"]);
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -18,6 +19,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
 
   const isPublicRoute = useMemo(() => publicRoutes.has(pathname), [pathname]);
+  const redirectIfAuthedPublic = useMemo(
+    () => redirectAuthedPublicRoutes.has(pathname),
+    [pathname],
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -53,10 +58,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
       router.replace("/login");
       return;
     }
-    if (user && isPublicRoute) {
+    if (user && redirectIfAuthedPublic) {
       router.replace("/dashboard");
     }
-  }, [isPublicRoute, loadingSession, pathname, router, user]);
+  }, [isPublicRoute, loadingSession, pathname, redirectIfAuthedPublic, router, user]);
 
   if (isPublicRoute) {
     return <>{children}</>;

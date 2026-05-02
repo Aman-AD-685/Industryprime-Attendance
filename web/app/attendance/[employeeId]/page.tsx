@@ -28,6 +28,7 @@ type Employee = {
   id: string;
   employee_code: string;
   name?: string | null;
+  email?: string | null;
 };
 
 type MonthOption = {
@@ -46,10 +47,56 @@ function monthLabel(month: number, year: number) {
   });
 }
 
-function calculateLocal(row: AttendanceRow): AttendanceRow {
+const WEEKEND_AUTO_PRESENT_EMAILS = new Set(["adrija@industryprime.com"]);
+
+function calculateLocal(
+  row: AttendanceRow,
+  employeeEmail?: string | null,
+  holidays?: Record<string, string> | null,
+): AttendanceRow {
   const inTime = row.in_time || "";
   const outTime = row.out_time || "";
-  const isSunday = new Date(row.date).getDay() === 0;
+  const dateKey = row.date.slice(0, 10);
+  const holidayLabel = holidays?.[dateKey];
+
+  if (holidayLabel && !inTime && !outTime) {
+    return {
+      ...row,
+      total_hours: 0,
+      working_hours: 0,
+      actual_hours: 0,
+      shortfall: 0,
+      present: "P",
+      absent: "",
+      late_time: 0,
+      time_value: 0,
+      status: "P",
+      status_ot_sf: holidayLabel,
+    };
+  }
+
+  const dow = new Date(row.date).getDay();
+  const isSaturday = dow === 6;
+  const isSunday = dow === 0;
+  const email = (employeeEmail || "").trim().toLowerCase();
+  const weekendAuto =
+    email && WEEKEND_AUTO_PRESENT_EMAILS.has(email) && (isSaturday || isSunday) && !inTime && !outTime;
+
+  if (weekendAuto) {
+    return {
+      ...row,
+      total_hours: 0,
+      working_hours: 0,
+      actual_hours: 0,
+      shortfall: 0,
+      present: "P",
+      absent: "",
+      late_time: 0,
+      time_value: 0,
+      status: "P",
+      status_ot_sf: isSaturday ? "Saturday" : "Sunday",
+    };
+  }
 
   if (isSunday && !inTime && !outTime) {
     return {
@@ -64,6 +111,26 @@ function calculateLocal(row: AttendanceRow): AttendanceRow {
       time_value: 0,
       status: "P",
       status_ot_sf: "Sunday",
+    };
+  }
+
+  if (inTime && !outTime) {
+    const [inH, inM] = inTime.split(":").map(Number);
+    const inMinutes = inH * 60 + inM;
+    const lateCutoff = 9 * 60 + 30;
+    const late = Number(Math.max(0, (inMinutes - lateCutoff) / 60).toFixed(2));
+    return {
+      ...row,
+      total_hours: 0,
+      working_hours: 0,
+      actual_hours: 0,
+      shortfall: 0,
+      present: "P",
+      absent: "",
+      late_time: late,
+      time_value: 0,
+      status: "P",
+      status_ot_sf: late > 0 ? "Late" : "OK",
     };
   }
 
@@ -90,8 +157,12 @@ function calculateLocal(row: AttendanceRow): AttendanceRow {
 
   const working = Number(((outMinutes - inMinutes) / 60).toFixed(2));
   const actual = Number((Math.max(0, outMinutes - 9 * 60) / 60).toFixed(2));
-  const shortfall = Number(Math.max(0, 9 - actual).toFixed(2));
-  const late = Number(Math.max(0, (inMinutes - 9 * 60) / 60).toFixed(2));
+  const scheduledHours =
+    isSaturday && !(email && WEEKEND_AUTO_PRESENT_EMAILS.has(email)) ? 5 : 9;
+  const shortfall = Number(Math.max(0, scheduledHours - actual).toFixed(2));
+  const lateCutoff = 9 * 60 + 30;
+  const late = Number(Math.max(0, (inMinutes - lateCutoff) / 60).toFixed(2));
+  const baseStatus = actual > scheduledHours ? "OT" : shortfall > 0 ? "SF" : "OK";
   return {
     ...row,
     working_hours: working,
@@ -102,7 +173,7 @@ function calculateLocal(row: AttendanceRow): AttendanceRow {
     late_time: late,
     time_value: actual,
     status: "P",
-    status_ot_sf: actual > 9 ? "OT" : shortfall > 0 ? "SF" : "OK",
+    status_ot_sf: late > 0 ? "Late" : baseStatus,
   };
 }
 
@@ -118,19 +189,21 @@ export default function AttendanceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [savingDate, setSavingDate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [holidays, setHolidays] = useState<Record<string, string>>({});
 
   async function loadAttendance(selectedMonth = month, selectedYear = year) {
     setLoading(true);
     setError(null);
     try {
       const [attendance, employees, monthRows] = await Promise.all([
-        apiFetch<{ rows: AttendanceRow[] }>(
+        apiFetch<{ rows: AttendanceRow[]; holidays?: Record<string, string> }>(
           `/attendance/${employeeId}?month=${selectedMonth}&year=${selectedYear}`
         ),
         apiFetch<Employee[]>("/employees?status=active"),
         apiFetch<MonthOption[]>(`/months/${employeeId}`),
       ]);
       setRows(attendance.rows);
+      setHolidays(attendance.holidays ?? {});
       setEmployee(employees.find((item) => item.id === employeeId) || null);
       setMonths(monthRows);
     } catch (err) {
@@ -167,7 +240,9 @@ export default function AttendanceDetailPage() {
   function updateLocalRow(date: string, patch: Partial<AttendanceRow>) {
     setRows((items) =>
       items.map((row) =>
-        row.date === date ? calculateLocal({ ...row, ...patch }) : row
+        row.date === date
+          ? calculateLocal({ ...row, ...patch }, employee?.email, holidays)
+          : row
       )
     );
   }
@@ -179,7 +254,7 @@ export default function AttendanceDetailPage() {
   }
 
   async function saveRow(row: AttendanceRow) {
-    if ((row.in_time && !row.out_time) || (!row.in_time && row.out_time)) {
+    if (!row.in_time && row.out_time) {
       return;
     }
     if (row.in_time && row.out_time && row.out_time <= row.in_time) {
@@ -306,18 +381,44 @@ export default function AttendanceDetailPage() {
                 ) : (
                   <tr
                     key={row.date}
-                    className={
-                      row.status === "A"
-                        ? "bg-red-50 text-red-950 dark:bg-red-950/30 dark:text-red-100"
-                        : row.status_ot_sf === "Sunday"
-                          ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
-                          : "bg-emerald-50/60 text-zinc-900 dark:bg-emerald-950/20 dark:text-zinc-100"
-                    }
+                    className={(() => {
+                      const dateKey = row.date.slice(0, 10);
+                      const holidayAuto =
+                        Boolean(holidays[dateKey]) &&
+                        !(row.in_time || "").trim() &&
+                        !(row.out_time || "").trim();
+                      if (row.status === "A") {
+                        return "bg-red-50 text-red-950 dark:bg-red-950/30 dark:text-red-100";
+                      }
+                      if (row.status_ot_sf === "Late") {
+                        return "bg-amber-50/90 text-amber-950 dark:bg-amber-950/25 dark:text-amber-100";
+                      }
+                      if (
+                        holidayAuto ||
+                        row.status_ot_sf === "Sunday" ||
+                        row.status_ot_sf === "Saturday"
+                      ) {
+                        return "bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300";
+                      }
+                      return "bg-emerald-50/60 text-zinc-900 dark:bg-emerald-950/20 dark:text-zinc-100";
+                    })()}
                   >
                     <Cell>{row.day}</Cell>
                     <Cell>{row.date}</Cell>
-                    <EditableTime value={row.in_time || ""} onChange={(value) => updateLocalRow(row.date, { in_time: value })} onBlur={(value) => void saveRow(calculateLocal({ ...row, in_time: value }))} />
-                    <EditableTime value={row.out_time || ""} onChange={(value) => updateLocalRow(row.date, { out_time: value })} onBlur={(value) => void saveRow(calculateLocal({ ...row, out_time: value }))} />
+                    <EditableTime
+                      value={row.in_time || ""}
+                      onChange={(value) => updateLocalRow(row.date, { in_time: value })}
+                      onBlur={(value) =>
+                        void saveRow(calculateLocal({ ...row, in_time: value }, employee?.email, holidays))
+                      }
+                    />
+                    <EditableTime
+                      value={row.out_time || ""}
+                      onChange={(value) => updateLocalRow(row.date, { out_time: value })}
+                      onBlur={(value) =>
+                        void saveRow(calculateLocal({ ...row, out_time: value }, employee?.email, holidays))
+                      }
+                    />
                     <EditableNumber value={row.total_hours} onChange={(value) => patchLocalRow(row.date, { total_hours: value })} onBlur={(value) => void saveRow({ ...row, total_hours: value })} />
                     <EditableNumber value={row.working_hours} onChange={(value) => patchLocalRow(row.date, { working_hours: value })} onBlur={(value) => void saveRow({ ...row, working_hours: value })} />
                     <EditableNumber value={row.actual_hours} onChange={(value) => patchLocalRow(row.date, { actual_hours: value })} onBlur={(value) => void saveRow({ ...row, actual_hours: value })} />

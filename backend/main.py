@@ -51,7 +51,8 @@ if _frontend_url:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[*_default_cors_origins, *_env_cors_origins],
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    # Local dev: any port on localhost / 127.0.0.1 / ::1 (Next default is often :3000).
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?|https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

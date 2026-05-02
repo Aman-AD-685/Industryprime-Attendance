@@ -69,10 +69,13 @@ export default function Sidebar({
     []
   );
 
-  const visibleItems = useMemo(
-    () => items.filter((item) => !item.roles || (role && item.roles.includes(role))),
-    [items, role]
-  );
+  const visibleItems = useMemo(() => {
+    const base = items.filter((item) => !item.roles || (role && item.roles.includes(role)));
+    if (role === "user") {
+      return base.filter((item) => item.href === "/dashboard" || item.href === "/attendance");
+    }
+    return base;
+  }, [items, role]);
 
   return (
     <aside

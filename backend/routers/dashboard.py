@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 from datetime import date
 from typing import Any, Dict, Optional
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Query
 from fastapi import Header, HTTPException
@@ -27,4 +29,20 @@ def dashboard_summary(
         tenant_id=auth.tenant_id,
         supabase=get_supabase_user(auth.access_token),
     )
+
+
+@router.get("/attendance-entry-url", response_model=Dict[str, str])
+def attendance_entry_share_url(authorization: Optional[str] = Header(default=None)):
+    """Build the public Add Attendance URL (includes ?key= when ATTENDANCE_ENTRY_SECRET is set)."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization bearer token")
+    get_auth_context(authorization=authorization)
+    base = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    secret = os.getenv("ATTENDANCE_ENTRY_SECRET", "").strip()
+    path = "/attendance-entry"
+    if secret:
+        url = f"{base}{path}?{urlencode({'key': secret})}"
+    else:
+        url = f"{base}{path}"
+    return {"url": url}
 

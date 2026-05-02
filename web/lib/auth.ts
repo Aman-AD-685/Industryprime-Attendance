@@ -1,5 +1,7 @@
 "use client";
 
+import { effectiveApiBase } from "@/lib/envApi";
+
 export type Role = "master_admin" | "admin" | "user";
 
 export type AuthUser = {
@@ -19,7 +21,6 @@ type AuthResponse = {
 const TOKEN_KEY = "industryprime.authToken";
 const USER_KEY = "industryprime.authUser";
 const COOKIE_NAME = "industryprime_token";
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 function setCookie(name: string, value: string, maxAgeSeconds: number) {
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAgeSeconds}; samesite=lax`;
@@ -30,9 +31,11 @@ function clearCookie(name: string) {
 }
 
 async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
+  const base = effectiveApiBase().replace(/\/$/, "");
+  const p = path.startsWith("/") ? path : `/${path}`;
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await fetch(`${base}${p}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -41,7 +44,7 @@ async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
     });
   } catch {
     throw new Error(
-      `Cannot reach FastAPI at ${API_BASE}. Check NEXT_PUBLIC_API_URL, backend deployment status, and CORS settings.`
+      `Cannot reach FastAPI (base ${base}). Check NEXT_PUBLIC_API_URL / next.config rewrites, backend status, and CORS.`
     );
   }
   const body = await res.json().catch(() => null);

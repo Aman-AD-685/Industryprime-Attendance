@@ -1,5 +1,6 @@
 "use client";
 
+import AddAttendanceHeaderLink from "./AddAttendanceHeaderLink";
 import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
 import UserMenu from "./UserMenu";
@@ -29,7 +30,8 @@ export default function Header({ onToggleSidebar }: { onToggleSidebar: () => voi
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <AddAttendanceHeaderLink />
           <NotificationBell />
           <ThemeToggle />
           <UserMenu />

@@ -1,10 +1,9 @@
 "use client";
 
 import { getStoredToken } from "@/lib/auth";
+import { API_BASE, effectiveApiBase } from "@/lib/envApi";
 
-// Backend base URL — override with NEXT_PUBLIC_API_URL in .env.local if needed
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+export { API_BASE };
 
 export async function getAccessToken(): Promise<string | null> {
   return getStoredToken();
@@ -27,7 +26,10 @@ export async function apiFetch<T = any>(
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const url = `${API_BASE}${path}`;
+  const raw = effectiveApiBase();
+  const base = raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  const p = path.startsWith("/") ? path : `/${path}`;
+  const url = `${base}${p}`;
   let res: Response;
   try {
     res = await fetch(url, {
@@ -36,8 +38,8 @@ export async function apiFetch<T = any>(
     });
   } catch (e) {
     const hint =
-      " Check that the FastAPI server is running and `NEXT_PUBLIC_API_URL` matches its port " +
-      `(currently ${API_BASE}). Try: cd backend && uvicorn main:app --reload`;
+      " Check that FastAPI is running and `next.config.ts` rewrites `/api` → your API (or set NEXT_PUBLIC_API_URL to match this page’s origin). " +
+      `Tried base: ${raw}. Try: cd backend && uvicorn main:app --reload`;
     throw new Error(
       (e instanceof Error ? e.message : "Failed to fetch") + "." + hint,
     );
@@ -47,4 +49,46 @@ export async function apiFetch<T = any>(
     throw new Error(text || res.statusText);
   }
   return (await res.json()) as T;
+}
+
+/**
+ * Public `/attendance-entry` calls must use same-origin `/api` so Next.js rewrites
+ * reach FastAPI without CORS. Do not use `NEXT_PUBLIC_API_URL` here — localhost vs
+ * 127.0.0.1 would otherwise break the browser fetch.
+ */
+const PUBLIC_ENTRY_API_BASE = "/api";
+
+/** Public endpoints (no auth cookie / bearer). Used by `/attendance-entry`. */
+export async function publicApiFetch<T = unknown>(
+  pathWithQuery: string,
+  init?: RequestInit,
+): Promise<T> {
+  const base = PUBLIC_ENTRY_API_BASE.endsWith("/")
+    ? PUBLIC_ENTRY_API_BASE.slice(0, -1)
+    : PUBLIC_ENTRY_API_BASE;
+  const path = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
+  const url = `${base}${path}`;
+  const headers = new Headers(init?.headers);
+  if (init?.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      headers,
+    });
+  } catch (e) {
+    const hint =
+      " Same-origin `/api` → FastAPI (see web/next.config.ts `rewrites`). " +
+      "Start the backend (e.g. uvicorn on port 8000), set BACKEND_PROXY_TARGET if it is not 127.0.0.1:8000, then restart `npm run dev`.";
+    throw new Error((e instanceof Error ? e.message : "Failed to fetch") + "." + hint);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || res.statusText);
+  }
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }

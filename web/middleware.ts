@@ -1,7 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const AUTH_COOKIE = "industryprime_token";
-const publicRoutes = new Set(["/login", "/signup"]);
+/** Paths reachable without a session cookie (includes public attendance entry). */
+const publicUnauthenticatedRoutes = new Set(["/login", "/signup", "/attendance-entry"]);
+/** Logged-in users are redirected away from these (not from `/attendance-entry`). */
+const redirectIfAuthedRoutes = new Set(["/login", "/signup"]);
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -11,11 +14,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (!token && !publicRoutes.has(pathname)) {
+  if (!token && !publicUnauthenticatedRoutes.has(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (token && publicRoutes.has(pathname)) {
+  if (token && redirectIfAuthedRoutes.has(pathname)) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
@@ -23,5 +26,18 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/dashboard/:path*", "/users/:path*", "/employees/:path*", "/attendance/:path*", "/leave/:path*", "/payroll/:path*", "/reports/:path*", "/settings/:path*", "/login", "/signup"],
+  matcher: [
+    "/",
+    "/dashboard/:path*",
+    "/users/:path*",
+    "/employees/:path*",
+    "/attendance/:path*",
+    "/attendance-entry",
+    "/leave/:path*",
+    "/payroll/:path*",
+    "/reports/:path*",
+    "/settings/:path*",
+    "/login",
+    "/signup",
+  ],
 };
