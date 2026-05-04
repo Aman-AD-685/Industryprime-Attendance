@@ -44,19 +44,33 @@ async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
     });
   } catch {
     throw new Error(
-      `Cannot reach FastAPI (base ${base}). Check NEXT_PUBLIC_API_URL / next.config rewrites, backend status, and CORS.`
+      `Cannot reach FastAPI (base ${base}). Check NEXT_PUBLIC_API_URL / API proxy, backend status, and CORS.`,
     );
   }
-  const body = await res.json().catch(() => null);
+
+  const rawText = await res.text();
+  const trimmed = rawText.trim();
+  let body: unknown;
+  if (!trimmed) {
+    body = null;
+  } else {
+    try {
+      body = JSON.parse(trimmed) as unknown;
+    } catch {
+      body = undefined;
+    }
+  }
+
   if (!res.ok) {
-    const detail = body?.detail;
+    const rec = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+    const detail = rec?.detail;
     let msg: string;
     if (typeof detail === "string") {
       msg = detail;
     } else if (Array.isArray(detail)) {
       msg = detail.map((x: { msg?: string }) => x?.msg || JSON.stringify(x)).join("; ");
-    } else if (body?.message) {
-      msg = String(body.message);
+    } else if (rec?.message) {
+      msg = String(rec.message);
     } else if (res.status === 502 || res.status === 503 || res.status === 504) {
       msg =
         "Cannot reach the API server (bad gateway). On Vercel, set BACKEND_PROXY_TARGET or NEXT_PUBLIC_API_URL to your live FastAPI base URL, then redeploy.";
@@ -65,6 +79,16 @@ async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
     }
     throw new Error(msg || "Request failed");
   }
+
+  if (body === undefined) {
+    const preview = trimmed.slice(0, 200);
+    const htmlHint = trimmed.startsWith("<") ? " Received HTML, not JSON — the /api proxy may point at the wrong host." : "";
+    throw new Error(`Invalid JSON from server.${htmlHint} Preview: ${preview || "(empty)"}`);
+  }
+  if (body === null || typeof body !== "object") {
+    throw new Error(`Unexpected response body (${typeof body}). Check API proxy and /auth routes.`);
+  }
+
   return body as T;
 }
 
@@ -102,6 +126,11 @@ export async function login(email: string, password: string): Promise<AuthUser> 
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
+  if (!data?.access_token || !data?.user) {
+    throw new Error(
+      "Login response was missing a token or user profile. Confirm /api proxies to your FastAPI app (see BACKEND_PROXY_TARGET / NEXT_PUBLIC_API_URL on Vercel).",
+    );
+  }
   storeAuth(data.access_token, data.user);
   return data.user;
 }
@@ -111,6 +140,9 @@ export async function signup(name: string, email: string, password: string): Pro
     method: "POST",
     body: JSON.stringify({ name, email, password }),
   });
+  if (!data?.user) {
+    throw new Error("Signup response was missing user data.");
+  }
   return data.user;
 }
 
@@ -119,6 +151,9 @@ export async function forgotPassword(email: string): Promise<string> {
     method: "POST",
     body: JSON.stringify({ email }),
   });
+  if (data?.message == null) {
+    throw new Error("Unexpected forgot-password response.");
+  }
   return data.message;
 }
 
@@ -129,6 +164,9 @@ export async function getCurrentUser(): Promise<AuthUser> {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (!data?.user) {
+    throw new Error("Session response was missing user data.");
+  }
   window.localStorage.setItem(USER_KEY, JSON.stringify(data.user));
   return data.user;
 }
@@ -150,5 +188,8 @@ export async function updateUserRole(userId: string, role: Role): Promise<AuthUs
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ role }),
   });
+  if (!data?.user) {
+    throw new Error("Role update response was missing user data.");
+  }
   return data.user;
 }
