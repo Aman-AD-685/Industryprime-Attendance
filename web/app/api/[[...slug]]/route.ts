@@ -27,6 +27,9 @@ const HOP_BY_HOP = new Set([
   "content-length",
 ]);
 
+/** Headers not copied from upstream → browser. `content-encoding` must be dropped: Node fetch decompresses the body but may still surface the origin's Content-Encoding, which causes ERR_CONTENT_DECODING_FAILED in production. */
+const UPSTREAM_RESPONSE_SKIP = new Set([...HOP_BY_HOP, "content-encoding"]);
+
 async function proxy(req: NextRequest, segments: string[]) {
   const path = segments.join("/");
   if (!path) {
@@ -68,7 +71,7 @@ async function proxy(req: NextRequest, segments: string[]) {
 
   const resHeaders = new Headers();
   upstream.headers.forEach((value, key) => {
-    if (HOP_BY_HOP.has(key.toLowerCase())) return;
+    if (UPSTREAM_RESPONSE_SKIP.has(key.toLowerCase())) return;
     resHeaders.set(key, value);
   });
 
