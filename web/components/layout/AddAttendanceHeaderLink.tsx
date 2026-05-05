@@ -9,6 +9,20 @@ function withFromAppParam(url: string): string {
   return url.includes("?") ? `${url}&from=app` : `${url}?from=app`;
 }
 
+/** Backend uses FRONTEND_URL (often still localhost in prod). Same-app entry must open on the origin the user is on. */
+function sameOriginAttendanceEntryUrl(apiUrl: string): string {
+  if (typeof window === "undefined") return apiUrl;
+  try {
+    const parsed = new URL(apiUrl, window.location.origin);
+    if (parsed.pathname === "/attendance-entry") {
+      return `${window.location.origin}${parsed.pathname}${parsed.search}`;
+    }
+  } catch {
+    /* keep apiUrl */
+  }
+  return apiUrl;
+}
+
 export default function AddAttendanceHeaderLink() {
   const [href, setHref] = useState("/attendance-entry?from=app");
 
@@ -17,7 +31,7 @@ export default function AddAttendanceHeaderLink() {
     (async () => {
       try {
         const json = await apiFetch<{ url: string }>("/dashboard/attendance-entry-url");
-        if (!cancelled && json?.url) setHref(withFromAppParam(json.url));
+        if (!cancelled && json?.url) setHref(withFromAppParam(sameOriginAttendanceEntryUrl(json.url)));
       } catch {
         if (!cancelled && typeof window !== "undefined") {
           setHref(withFromAppParam(`${window.location.origin}/attendance-entry`));
