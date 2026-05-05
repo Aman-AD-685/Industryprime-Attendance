@@ -43,6 +43,7 @@ export default function AttendancePdfUploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PdfUploadStatusResponse | null>(null);
   const [drag, setDrag] = useState(false);
+  const [lastFile, setLastFile] = useState<File | null>(null);
 
   useEffect(() => {
     let m = true;
@@ -73,25 +74,16 @@ export default function AttendancePdfUploadPage() {
     setError("Timed out waiting for PDF processing.");
   }, []);
 
-  const onFile = useCallback(
-    async (file: File | null) => {
+  const runUpload = useCallback(
+    async (file: File, dryRunMode: boolean) => {
       setError(null);
       setResult(null);
       setProgress(0);
-      if (!file) return;
-      if (file.type !== "application/pdf") {
-        setError("Please choose a PDF file.");
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        setError("PDF must be at most 5MB.");
-        return;
-      }
       setBusy(true);
       try {
         const { upload_id } = await uploadAttendancePdfWithProgress(file, {
           overwrite,
-          dryRun,
+          dryRun: dryRunMode,
           onProgress: (loaded, total) => {
             if (total > 0) setProgress(Math.round((100 * loaded) / total));
           },
@@ -104,8 +96,33 @@ export default function AttendancePdfUploadPage() {
         setBusy(false);
       }
     },
-    [dryRun, overwrite, pollUntilDone],
+    [overwrite, pollUntilDone],
   );
+
+  const onFile = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      if (file.type !== "application/pdf") {
+        setError("Please choose a PDF file.");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        setError("PDF must be at most 5MB.");
+        return;
+      }
+      setLastFile(file);
+      await runUpload(file, dryRun);
+    },
+    [dryRun, runUpload],
+  );
+
+  const saveDryRunToAttendance = useCallback(async () => {
+    if (!lastFile) {
+      setError("Choose a PDF first.");
+      return;
+    }
+    await runUpload(lastFile, false);
+  }, [lastFile, runUpload]);
 
   if (loadingSession) {
     return (
@@ -246,6 +263,21 @@ export default function AttendancePdfUploadPage() {
               >
                 Download error report (CSV)
               </button>
+            ) : null}
+            {result.dry_run ? (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void saveDryRunToAttendance()}
+                  disabled={busy || !lastFile}
+                  className="rounded-2xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {busy ? "Saving..." : "Save to Attendance"}
+                </button>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  After preview (dry run), click Save to write user-wise IN/OUT into Attendance.
+                </p>
+              </div>
             ) : null}
           </div>
 
