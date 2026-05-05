@@ -388,6 +388,10 @@ def serialize_attendance_row(
             late_time = calculated["late_time"]
         status = row.get("status") or calculated["status"]
         status_ot_sf = row.get("status_ot_sf") or row.get("final_status") or calculated["status_ot_sf"]
+    # Guard against old/manual bad data: if attendance is Present, OT/SF must never display "Absent".
+    if status == "P" and str(status_ot_sf).strip().lower() == "absent":
+        status_ot_sf = "Present"
+
     return {
         "id": row.get("id"),
         "employee_id": row.get("employee_id"),
