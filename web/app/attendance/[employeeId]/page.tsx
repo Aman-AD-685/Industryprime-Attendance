@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { getStoredUser, type Role } from "@/lib/auth";
 
 type AttendanceRow = {
   id?: string | null;
@@ -184,6 +185,7 @@ export default function AttendanceDetailPage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [rows, setRows] = useState<AttendanceRow[]>([]);
+  const [role, setRole] = useState<Role | null>(null);
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [months, setMonths] = useState<MonthOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -217,6 +219,15 @@ export default function AttendanceDetailPage() {
     void loadAttendance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employeeId]);
+
+  useEffect(() => {
+    const syncRole = () => setRole(getStoredUser()?.role ?? null);
+    syncRole();
+    window.addEventListener("industryprime-auth-change", syncRole);
+    return () => window.removeEventListener("industryprime-auth-change", syncRole);
+  }, []);
+
+  const canEditAttendance = role === "master_admin" || role === "admin";
 
   const displayRows = useMemo<DisplayRow[]>(() => {
     const output: DisplayRow[] = [];
@@ -254,6 +265,7 @@ export default function AttendanceDetailPage() {
   }
 
   async function saveRow(row: AttendanceRow) {
+    if (!canEditAttendance) return;
     if (!row.in_time && row.out_time) {
       return;
     }
@@ -335,6 +347,12 @@ export default function AttendanceDetailPage() {
         </div>
       )}
 
+      {!canEditAttendance && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+          Read-only mode: only Master Admin and Admin can edit attendance.
+        </div>
+      )}
+
       <div className="max-h-[72vh] overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <table className="min-w-[1350px] border-collapse text-left text-xs">
           <thead className="sticky top-0 z-10 bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
@@ -407,6 +425,7 @@ export default function AttendanceDetailPage() {
                     <Cell>{row.date}</Cell>
                     <EditableTime
                       value={row.in_time || ""}
+                      disabled={!canEditAttendance}
                       onChange={(value) => updateLocalRow(row.date, { in_time: value })}
                       onBlur={(value) =>
                         void saveRow(calculateLocal({ ...row, in_time: value }, employee?.email, holidays))
@@ -414,17 +433,19 @@ export default function AttendanceDetailPage() {
                     />
                     <EditableTime
                       value={row.out_time || ""}
+                      disabled={!canEditAttendance}
                       onChange={(value) => updateLocalRow(row.date, { out_time: value })}
                       onBlur={(value) =>
                         void saveRow(calculateLocal({ ...row, out_time: value }, employee?.email, holidays))
                       }
                     />
-                    <EditableNumber value={row.total_hours} onChange={(value) => patchLocalRow(row.date, { total_hours: value })} onBlur={(value) => void saveRow({ ...row, total_hours: value })} />
-                    <EditableNumber value={row.working_hours} onChange={(value) => patchLocalRow(row.date, { working_hours: value })} onBlur={(value) => void saveRow({ ...row, working_hours: value })} />
-                    <EditableNumber value={row.actual_hours} onChange={(value) => patchLocalRow(row.date, { actual_hours: value })} onBlur={(value) => void saveRow({ ...row, actual_hours: value })} />
-                    <EditableNumber value={row.shortfall} onChange={(value) => patchLocalRow(row.date, { shortfall: value })} onBlur={(value) => void saveRow({ ...row, shortfall: value })} />
+                    <EditableNumber value={row.total_hours} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { total_hours: value })} onBlur={(value) => void saveRow({ ...row, total_hours: value })} />
+                    <EditableNumber value={row.working_hours} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { working_hours: value })} onBlur={(value) => void saveRow({ ...row, working_hours: value })} />
+                    <EditableNumber value={row.actual_hours} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { actual_hours: value })} onBlur={(value) => void saveRow({ ...row, actual_hours: value })} />
+                    <EditableNumber value={row.shortfall} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { shortfall: value })} onBlur={(value) => void saveRow({ ...row, shortfall: value })} />
                     <EditableSelect
                       value={row.status}
+                      disabled={!canEditAttendance}
                       options={["P", "A"]}
                       onChange={(value) =>
                         patchLocalRow(row.date, {
@@ -442,9 +463,9 @@ export default function AttendanceDetailPage() {
                         })
                       }
                     />
-                    <EditableNumber value={row.late_time} decimals={2} onChange={(value) => patchLocalRow(row.date, { late_time: value })} onBlur={(value) => void saveRow({ ...row, late_time: value })} />
-                    <EditableNumber value={row.time_value} onChange={(value) => patchLocalRow(row.date, { time_value: value })} onBlur={(value) => void saveRow({ ...row, time_value: value })} />
-                    <EditableText value={savingDate === row.date ? "Saving..." : row.status_ot_sf} onChange={(value) => patchLocalRow(row.date, { status_ot_sf: value })} onBlur={(value) => void saveRow({ ...row, status_ot_sf: value })} />
+                    <EditableNumber value={row.late_time} disabled={!canEditAttendance} decimals={2} onChange={(value) => patchLocalRow(row.date, { late_time: value })} onBlur={(value) => void saveRow({ ...row, late_time: value })} />
+                    <EditableNumber value={row.time_value} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { time_value: value })} onBlur={(value) => void saveRow({ ...row, time_value: value })} />
+                    <EditableText value={savingDate === row.date ? "Saving..." : row.status_ot_sf} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { status_ot_sf: value })} onBlur={(value) => void saveRow({ ...row, status_ot_sf: value })} />
                   </tr>
                 )
               )
@@ -462,10 +483,12 @@ function Cell({ children }: { children: React.ReactNode }) {
 
 function EditableText({
   value,
+  disabled,
   onChange,
   onBlur,
 }: {
   value: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
   onBlur: (value: string) => void;
 }) {
@@ -473,9 +496,10 @@ function EditableText({
     <td className="border border-zinc-200 p-1 dark:border-zinc-800">
       <input
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         onBlur={(event) => onBlur(event.target.value)}
-        className="w-full bg-transparent px-2 py-1 outline-none focus:bg-white dark:focus:bg-zinc-900"
+        className="w-full bg-transparent px-2 py-1 outline-none focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 dark:focus:bg-zinc-900"
       />
     </td>
   );
@@ -483,11 +507,13 @@ function EditableText({
 
 function EditableNumber({
   value,
+  disabled,
   onChange,
   onBlur,
   decimals,
 }: {
   value: number;
+  disabled?: boolean;
   onChange: (value: number) => void;
   onBlur: (value: number) => void;
   decimals?: number;
@@ -499,9 +525,10 @@ function EditableNumber({
         type="number"
         step="0.01"
         value={displayValue}
+        disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
         onBlur={(event) => onBlur(Number(event.target.value))}
-        className="w-full bg-transparent px-2 py-1 outline-none focus:bg-white dark:focus:bg-zinc-900"
+        className="w-full bg-transparent px-2 py-1 outline-none focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 dark:focus:bg-zinc-900"
       />
     </td>
   );
@@ -509,11 +536,13 @@ function EditableNumber({
 
 function EditableSelect({
   value,
+  disabled,
   options,
   onChange,
   onBlur,
 }: {
   value: string;
+  disabled?: boolean;
   options: string[];
   onChange: (value: string) => void;
   onBlur: (value: string) => void;
@@ -522,9 +551,10 @@ function EditableSelect({
     <td className="border border-zinc-200 p-1 dark:border-zinc-800">
       <select
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         onBlur={(event) => onBlur(event.target.value)}
-        className="w-full bg-transparent px-2 py-1 outline-none focus:bg-white dark:focus:bg-zinc-900"
+        className="w-full bg-transparent px-2 py-1 outline-none focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 dark:focus:bg-zinc-900"
       >
         {options.map((option) => (
           <option key={option} value={option}>
@@ -536,15 +566,16 @@ function EditableSelect({
   );
 }
 
-function EditableTime(props: { value: string; onChange: (value: string) => void; onBlur: (value: string) => void }) {
+function EditableTime(props: { value: string; disabled?: boolean; onChange: (value: string) => void; onBlur: (value: string) => void }) {
   return (
     <td className="border border-zinc-200 p-1 dark:border-zinc-800">
       <input
         type="time"
         value={props.value}
+        disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
         onBlur={(event) => props.onBlur(event.target.value)}
-        className="w-full bg-transparent px-2 py-1 outline-none focus:bg-white dark:focus:bg-zinc-900"
+        className="w-full bg-transparent px-2 py-1 outline-none focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 dark:focus:bg-zinc-900"
       />
     </td>
   );

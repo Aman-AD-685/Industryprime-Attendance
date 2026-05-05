@@ -109,20 +109,12 @@ def _require_pdf_magic(data: bytes) -> None:
 
 
 def _assert_can_update_attendance(employee_id: str, auth: AuthContext) -> None:
-    """Admins may edit anyone; other roles may only edit rows for their own employee record (by email)."""
-    if auth.role in {"master_admin", "admin"}:
-        return
-    rows = get_supabase().select(
-        table="employees",
-        select="email",
-        where_eq={"id": employee_id},
-        limit=1,
-    )
-    emp = rows[0] if rows else {}
-    if str(emp.get("email") or "").strip().lower() != auth.email.strip().lower():
+    """Only Admin and Master Admin may edit attendance rows."""
+    del employee_id
+    if auth.role not in {"master_admin", "admin"}:
         raise HTTPException(
             status_code=403,
-            detail="You can only edit your own attendance. Ask an admin to change other employees.",
+            detail="Read-only access: only Admin or Master Admin can edit attendance.",
         )
 
 
