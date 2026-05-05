@@ -22,6 +22,21 @@ const TOKEN_KEY = "industryprime.authToken";
 const USER_KEY = "industryprime.authUser";
 const COOKIE_NAME = "industryprime_token";
 
+/** Abort hung API calls so refresh never spins forever (esp. offline / wrong NEXT_PUBLIC_API_URL). */
+const AUTH_FETCH_TIMEOUT_MS = 18_000;
+
+function readCookieRaw(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const safe = name.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+  const m = document.cookie.match(new RegExp(`(?:^|; )${safe}=([^;]*)`));
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1].trim());
+  } catch {
+    return m[1].trim();
+  }
+}
+
 function setCookie(name: string, value: string, maxAgeSeconds: number) {
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAgeSeconds}; samesite=lax`;
 }
@@ -34,18 +49,34 @@ async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
   const base = effectiveApiBase().replace(/\/$/, "");
   const p = path.startsWith("/") ? path : `/${path}`;
   let res: Response;
+  const controller = new AbortController();
+  const timeoutId =
+    typeof window !== "undefined"
+      ? window.setTimeout(() => controller.abort(), AUTH_FETCH_TIMEOUT_MS)
+      : 0;
+
   try {
     res = await fetch(`${base}${p}`, {
       ...init,
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         ...(init.headers || {}),
       },
     });
-  } catch {
+  } catch (cause: unknown) {
+    const aborted =
+      (cause instanceof DOMException && cause.name === "AbortError") ||
+      (typeof cause === "object" &&
+        cause !== null &&
+        (cause as { name?: string }).name === "AbortError");
     throw new Error(
-      `Cannot reach FastAPI (base ${base}). Check NEXT_PUBLIC_API_URL / API proxy, backend status, and CORS.`,
+      aborted
+        ? `Auth request timed out after ${AUTH_FETCH_TIMEOUT_MS / 1000}s (base ${base}). Is FastAPI running?`
+        : `Cannot reach FastAPI (base ${base}). Check NEXT_PUBLIC_API_URL / API proxy, backend status, and CORS.`,
     );
+  } finally {
+    if (timeoutId && typeof window !== "undefined") window.clearTimeout(timeoutId);
   }
 
   const rawText = await res.text();
@@ -94,7 +125,19 @@ async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
 
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
+  const fromLs = window.localStorage.getItem(TOKEN_KEY);
+  if (fromLs && fromLs.trim()) return fromLs;
+  /** Middleware uses this cookie on refresh; if LS was cleared/out of sync, recover so /auth/me can run */
+  const fromCookie = readCookieRaw(COOKIE_NAME);
+  if (fromCookie && fromCookie.trim()) {
+    try {
+      window.localStorage.setItem(TOKEN_KEY, fromCookie);
+    } catch {
+      /* private mode / quota */
+    }
+    return fromCookie;
+  }
+  return null;
 }
 
 export function getStoredUser(): AuthUser | null {

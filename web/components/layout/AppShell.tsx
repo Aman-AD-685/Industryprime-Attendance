@@ -50,7 +50,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
       mounted = false;
       window.removeEventListener("industryprime-auth-change", verifySession);
     };
-  }, [pathname]);
+    // Refresh and login/logout handled here. Do not re-run on pathname — parallel /auth/me calls caused flaky “stuck” loading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: stable session probe
+  }, []);
 
   useEffect(() => {
     if (loadingSession) return;
