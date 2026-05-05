@@ -8,7 +8,7 @@ import Sidebar from "./Sidebar";
 import { cn } from "@/lib/cn";
 import { clearAuth, getCurrentUser, getStoredToken, type AuthUser } from "@/lib/auth";
 
-const publicRoutes = new Set(["/login", "/signup", "/attendance-entry"]);
+const publicRoutes = new Set(["/login", "/signup", "/attendance-entry", "/attendance-upload"]);
 const redirectAuthedPublicRoutes = new Set(["/login", "/signup"]);
 
 export default function AppShell({ children }: { children: ReactNode }) {

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const AUTH_COOKIE = "industryprime_token";
 /** Paths reachable without a session cookie (includes public attendance entry). */
-const publicUnauthenticatedRoutes = new Set(["/login", "/signup", "/attendance-entry"]);
+const publicUnauthenticatedRoutes = new Set(["/login", "/signup", "/attendance-entry", "/attendance-upload"]);
 /** Logged-in users are redirected away from these (not from `/attendance-entry`). */
 const redirectIfAuthedRoutes = new Set(["/login", "/signup"]);
 
@@ -32,6 +32,7 @@ export const config = {
     "/users/:path*",
     "/employees/:path*",
     "/attendance/:path*",
+    "/attendance-upload",
     "/attendance-entry",
     "/leave/:path*",
     "/payroll/:path*",

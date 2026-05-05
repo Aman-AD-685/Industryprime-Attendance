@@ -5,3 +5,8 @@ openpyxl
 python-multipart
 requests
 python-dotenv
+pdfplumber
+PyMuPDF
+Pillow
+# OCR fallback: requires the Tesseract binary on PATH (e.g. apt install tesseract-ocr).
+pytesseract

@@ -2,7 +2,10 @@
 HRIS API — FastAPI entrypoint (Phase 1: attendance upload + report).
 """
 
+import asyncio
 import os
+import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -18,8 +21,31 @@ try:
 except Exception:
     pass
 
+PDF_UPLOAD_TMP = Path(tempfile.gettempdir()) / "hris_pdf_upload"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    PDF_UPLOAD_TMP.mkdir(parents=True, exist_ok=True)
+    cleanup_stale_pdf_tempfiles(str(PDF_UPLOAD_TMP))
+
+    async def hourly_tmp_cleanup():
+        while True:
+            await asyncio.sleep(3600)
+            cleanup_stale_pdf_tempfiles(str(PDF_UPLOAD_TMP))
+
+    cleanup_task = asyncio.create_task(hourly_tmp_cleanup())
+    yield
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
+
+
 from routers import attendance
 from routers.dashboard import router as dashboard_router
+from services.attendance_pdf_upload_service import cleanup_stale_pdf_tempfiles
 from routers.employees import router as employees_router
 from routers.leave import router as leave_router
 from routers.payroll import router as payroll_router
@@ -31,6 +57,7 @@ app = FastAPI(
     title="HRIS API",
     description="Human Resource Information System — Phase 1 attendance",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 _default_cors_origins = [

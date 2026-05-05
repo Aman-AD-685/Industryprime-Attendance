@@ -268,7 +268,13 @@ def _blank_row(employee_id: str, day: date) -> Dict[str, Any]:
     }
 
 
-def _stored_attendance_row(row: Dict[str, Any], calculated: Dict[str, Any]) -> Dict[str, Any]:
+def _stored_attendance_row(
+    row: Dict[str, Any],
+    calculated: Dict[str, Any],
+    *,
+    source: str = "manual",
+    upload_id: Optional[str] = None,
+) -> Dict[str, Any]:
     actual_hours = float(row.get("actual_hours") if row.get("actual_hours") is not None else calculated["actual_hours"])
     working_hours = float(row.get("working_hours") if row.get("working_hours") is not None else calculated["working_hours"])
     late_time = float(row.get("late_time") if row.get("late_time") is not None else calculated["late_time"])
@@ -276,7 +282,7 @@ def _stored_attendance_row(row: Dict[str, Any], calculated: Dict[str, Any]) -> D
     status_ot_sf = str(row.get("status_ot_sf") or calculated["status_ot_sf"])
     sched = float(calculated.get("scheduled_hours") or 9)
     overtime_hours = max(0, actual_hours - sched)
-    return {
+    out: Dict[str, Any] = {
         "employee_id": row["employee_id"],
         "date": str(row["date"])[:10],
         "check_in": calculated.get("in_time"),
@@ -286,8 +292,11 @@ def _stored_attendance_row(row: Dict[str, Any], calculated: Dict[str, Any]) -> D
         "late_minutes": int(late_time * 60),
         "overtime_hours": round(overtime_hours, 2),
         "final_status": status_ot_sf,
-        "source": "manual",
+        "source": source,
     }
+    if upload_id:
+        out["upload_id"] = upload_id
+    return out
 
 
 def ensure_month(
