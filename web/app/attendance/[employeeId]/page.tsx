@@ -347,12 +347,6 @@ export default function AttendanceDetailPage() {
         </div>
       )}
 
-      {!canEditAttendance && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-          Read-only mode: only Master Admin and Admin can edit attendance.
-        </div>
-      )}
-
       <div className="max-h-[72vh] overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <table className="min-w-[1350px] border-collapse text-left text-xs">
           <thead className="sticky top-0 z-10 bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">

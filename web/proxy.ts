@@ -6,7 +6,7 @@ const publicUnauthenticatedRoutes = new Set(["/login", "/signup", "/attendance-e
 /** Logged-in users are redirected away from these (not from `/attendance-entry`). */
 const redirectIfAuthedRoutes = new Set(["/login", "/signup"]);
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get(AUTH_COOKIE)?.value;
 
