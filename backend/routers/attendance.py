@@ -104,7 +104,10 @@ def _enqueue_pdf_job(
 def _require_pdf_magic(data: bytes) -> None:
     if len(data) > MAX_PDF_BYTES:
         raise HTTPException(status_code=400, detail="PDF exceeds 5MB limit")
-    if len(data) < 8 or not data[:5].startswith(b"%PDF"):
+    # Some valid PDFs include a BOM/whitespace before the `%PDF-` header.
+    # The PDF spec allows the header to appear within the first 1024 bytes.
+    header_window = data[:1024]
+    if len(data) < 8 or b"%PDF-" not in header_window:
         raise HTTPException(status_code=400, detail="Expected a PDF file (application/pdf)")
 
 
