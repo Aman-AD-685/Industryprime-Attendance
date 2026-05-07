@@ -81,6 +81,7 @@ class EmployeeAttendanceRowOut(BaseModel):
     out_location: Optional[str] = None
     total_hours: float
     working_hours: float
+    working_hours_display: str = "0.00"
     actual_hours: float
     shortfall: float
     present: str

@@ -15,6 +15,7 @@ type AttendanceRow = {
   out_time?: string | null;
   total_hours: number;
   working_hours: number;
+  working_hours_display?: string;
   actual_hours: number;
   shortfall: number;
   present: string;
@@ -39,7 +40,7 @@ type MonthOption = {
 
 type DisplayRow =
   | ({ kind: "attendance" } & AttendanceRow)
-  | { kind: "total"; id: string; label: string; actual_hours: number };
+  | { kind: "total"; id: string; label: string; working_hours_display: string };
 
 function monthLabel(month: number, year: number) {
   return new Date(year, month - 1, 1).toLocaleString("en", {
@@ -49,6 +50,29 @@ function monthLabel(month: number, year: number) {
 }
 
 const WEEKEND_AUTO_PRESENT_EMAILS = new Set(["adrija@industryprime.com"]);
+
+function hhmmToMinutes(value: unknown): number {
+  if (value == null) return 0;
+  const text = String(value).trim();
+  if (!text) return 0;
+  const [hRaw, mRaw = ""] = text.split(".", 2);
+  const h = Number.parseInt(hRaw || "0", 10);
+  if (Number.isNaN(h) || h < 0) return 0;
+  const mmDigits = mRaw.replace(/\D/g, "");
+  let mm = 0;
+  if (mmDigits.length === 1) mm = Number.parseInt(mmDigits, 10) * 10;
+  else if (mmDigits.length >= 2) mm = Number.parseInt(mmDigits.slice(0, 2), 10);
+  if (Number.isNaN(mm) || mm < 0) mm = 0;
+  if (mm > 59) mm = 59;
+  return h * 60 + mm;
+}
+
+function minutesToHHMM(minutes: number): string {
+  const m = Math.max(0, Math.floor(minutes));
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return `${h}.${String(rem).padStart(2, "0")}`;
+}
 
 function calculateLocal(
   row: AttendanceRow,
@@ -65,6 +89,7 @@ function calculateLocal(
       ...row,
       total_hours: 0,
       working_hours: 0,
+      working_hours_display: "0.00",
       actual_hours: 0,
       shortfall: 0,
       present: "P",
@@ -88,6 +113,7 @@ function calculateLocal(
       ...row,
       total_hours: 0,
       working_hours: 0,
+      working_hours_display: "0.00",
       actual_hours: 0,
       shortfall: 0,
       present: "P",
@@ -104,6 +130,7 @@ function calculateLocal(
       ...row,
       total_hours: 0,
       working_hours: 0,
+      working_hours_display: "0.00",
       actual_hours: 0,
       shortfall: 0,
       present: "P",
@@ -124,6 +151,7 @@ function calculateLocal(
       ...row,
       total_hours: 0,
       working_hours: 0,
+      working_hours_display: "0.00",
       actual_hours: 0,
       shortfall: 0,
       present: "P",
@@ -139,6 +167,7 @@ function calculateLocal(
     return {
       ...row,
       working_hours: 0,
+      working_hours_display: "0.00",
       actual_hours: 0,
       shortfall: row.total_hours,
       present: "",
@@ -156,17 +185,20 @@ function calculateLocal(
   const outMinutes = outHour * 60 + outMinute;
   if (outMinutes <= inMinutes) return row;
 
-  const working = Number(((outMinutes - inMinutes) / 60).toFixed(2));
-  const actual = Number((Math.max(0, outMinutes - 9 * 60) / 60).toFixed(2));
+  const workingMinutes = Math.max(0, outMinutes - Math.max(inMinutes, 9 * 60));
+  const workingDisplay = minutesToHHMM(workingMinutes);
+  const working = Number(workingDisplay);
+  const actual = working;
   const scheduledHours =
     isSaturday && !(email && WEEKEND_AUTO_PRESENT_EMAILS.has(email)) ? 5 : 9;
-  const shortfall = Number(Math.max(0, scheduledHours - actual).toFixed(2));
+  const shortfall = Number(minutesToHHMM(Math.max(0, scheduledHours * 60 - workingMinutes)));
   const lateCutoff = 9 * 60 + 30;
   const late = Number(Math.max(0, (inMinutes - lateCutoff) / 60).toFixed(2));
   const baseStatus = actual > scheduledHours ? "OT" : shortfall > 0 ? "SF" : "OK";
   return {
     ...row,
     working_hours: working,
+    working_hours_display: workingDisplay,
     actual_hours: actual,
     shortfall,
     present: "P",
@@ -231,18 +263,18 @@ export default function AttendanceDetailPage() {
 
   const displayRows = useMemo<DisplayRow[]>(() => {
     const output: DisplayRow[] = [];
-    let weeklyActual = 0;
+    let weeklyWorkingMinutes = 0;
     for (const row of rows) {
       output.push({ ...row, kind: "attendance" });
-      weeklyActual += Number(row.actual_hours || 0);
+      weeklyWorkingMinutes += hhmmToMinutes(row.working_hours_display ?? row.working_hours ?? 0);
       if (new Date(row.date).getDay() === 0) {
         output.push({
           kind: "total",
           id: `total-${row.date}`,
-          label: "Total Working",
-          actual_hours: Number(weeklyActual.toFixed(2)),
+          label: "Total Working Hrs",
+          working_hours_display: minutesToHHMM(weeklyWorkingMinutes),
         });
-        weeklyActual = 0;
+        weeklyWorkingMinutes = 0;
       }
     }
     return output;
@@ -286,7 +318,6 @@ export default function AttendanceDetailPage() {
           out_time: row.out_time || null,
           total_hours: row.total_hours,
           working_hours: row.working_hours,
-          actual_hours: row.actual_hours,
           shortfall: row.shortfall,
           status: row.status,
           late_time: row.late_time,
@@ -348,7 +379,7 @@ export default function AttendanceDetailPage() {
       )}
 
       <div className="max-h-[72vh] overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <table className="min-w-[1350px] border-collapse text-left text-xs">
+        <table className="min-w-[1220px] border-collapse text-left text-xs">
           <thead className="sticky top-0 z-10 bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
             <tr>
               {[
@@ -358,7 +389,6 @@ export default function AttendanceDetailPage() {
                 "Out Time",
                 "Total Hrs.",
                 "Working Hrs",
-                "Actual",
                 "Shortfall",
                 "Atten.",
                 "Late Time",
@@ -374,7 +404,7 @@ export default function AttendanceDetailPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={13} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={11} className="px-4 py-12 text-center text-zinc-500">
                   Loading attendance...
                 </td>
               </tr>
@@ -382,13 +412,13 @@ export default function AttendanceDetailPage() {
               displayRows.map((row) =>
                 row.kind === "total" ? (
                   <tr key={row.id} className="bg-zinc-200 font-semibold dark:bg-zinc-800">
-                    <td className="border border-zinc-300 px-3 py-2 dark:border-zinc-700" colSpan={6}>
+                    <td className="border border-zinc-300 px-3 py-2 dark:border-zinc-700" colSpan={5}>
                       {row.label}
                     </td>
                     <td className="border border-zinc-300 px-3 py-2 dark:border-zinc-700">
-                      {row.actual_hours}
+                      {row.working_hours_display}
                     </td>
-                    <td className="border border-zinc-300 px-3 py-2 dark:border-zinc-700" colSpan={6} />
+                    <td className="border border-zinc-300 px-3 py-2 dark:border-zinc-700" colSpan={5} />
                   </tr>
                 ) : (
                   <tr
@@ -434,8 +464,7 @@ export default function AttendanceDetailPage() {
                       }
                     />
                     <EditableNumber value={row.total_hours} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { total_hours: value })} onBlur={(value) => void saveRow({ ...row, total_hours: value })} />
-                    <EditableNumber value={row.working_hours} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { working_hours: value })} onBlur={(value) => void saveRow({ ...row, working_hours: value })} />
-                    <EditableNumber value={row.actual_hours} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { actual_hours: value })} onBlur={(value) => void saveRow({ ...row, actual_hours: value })} />
+                    <Cell>{row.working_hours_display ?? minutesToHHMM(hhmmToMinutes(row.working_hours ?? 0))}</Cell>
                     <EditableNumber value={row.shortfall} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { shortfall: value })} onBlur={(value) => void saveRow({ ...row, shortfall: value })} />
                     <EditableSelect
                       value={row.status}

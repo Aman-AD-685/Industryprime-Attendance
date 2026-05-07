@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { forgotPassword, login } from "@/lib/auth";
 
@@ -15,17 +15,24 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  const canSubmit = useMemo(() => {
-    return email.trim().includes("@") && password.length >= 8;
-  }, [email, password]);
-
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const emailTrim = email.trim();
+    if (!emailTrim.includes("@")) {
+      setError("Enter a valid email address.");
+      setInfo(null);
+      return;
+    }
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      setInfo(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     setInfo(null);
     try {
-      await login(email.trim(), password);
+      await login(emailTrim, password);
       router.replace("/dashboard");
       router.refresh();
     } catch (err) {
@@ -145,7 +152,7 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={!canSubmit || loading}
+              disabled={loading}
               className="h-11 w-full rounded-2xl bg-emerald-600 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Logging in..." : "Login"}

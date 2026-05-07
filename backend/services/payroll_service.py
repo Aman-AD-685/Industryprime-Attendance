@@ -5,6 +5,7 @@ from datetime import date
 from typing import Any, Dict, List
 
 from database.supabase_client import SupabaseRest, get_supabase
+from services.working_hours import hhmm_value_to_minutes, minutes_to_hhmm_float
 
 
 def generate_payroll(
@@ -140,7 +141,8 @@ def summarize_payroll(
     for emp_id, employee in employee_by_id.items():
         rows = attendance_by_employee.get(emp_id, [])
         present_rows = [row for row in rows if row.get("check_in") and row.get("check_out")]
-        total_hours = round(sum(float(row.get("working_hours") or 0) for row in rows), 2)
+        total_minutes = sum(hhmm_value_to_minutes(row.get("working_hours")) for row in rows)
+        total_hours = minutes_to_hhmm_float(total_minutes)
         present = len({str(row.get("date"))[:10] for row in present_rows})
         holidays = 0
         absent = max(0, total_days - total_sundays - holidays - present)

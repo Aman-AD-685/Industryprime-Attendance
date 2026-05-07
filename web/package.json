@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3000",
+    "predev": "node -e \"try{require('fs').rmSync('.next',{ recursive:true, force:true, maxRetries:5, retryDelay:200 });}catch(e){console.warn('skip .next cleanup:', e?.code || e?.message)}\"",
+    "dev": "node --max-old-space-size=8192 ./node_modules/next/dist/bin/next dev --webpack --port 3000",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

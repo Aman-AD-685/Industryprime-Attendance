@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 /**
  * Server-side proxy: browser calls same-origin `/api/*`, this forwards to FastAPI.
  * Reads backend URL at **request time** so Vercel can use `BACKEND_PROXY_TARGET` or
@@ -50,9 +52,11 @@ async function proxy(req: NextRequest, segments: string[]) {
   };
 
   if (req.method !== "GET" && req.method !== "HEAD") {
-    const buf = await req.arrayBuffer();
-    if (buf.byteLength > 0) {
-      init.body = buf;
+    // Stream request body to upstream to avoid full buffering for multipart uploads.
+    if (req.body) {
+      init.body = req.body;
+      // Node fetch requires `duplex` when body is a stream.
+      (init as RequestInit & { duplex: "half" }).duplex = "half";
     }
   }
 

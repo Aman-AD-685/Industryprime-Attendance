@@ -8,6 +8,13 @@ from fastapi import HTTPException
 
 from database.supabase_client import SupabaseRest
 from services.attendance_link_entry_service import link_entries_by_date_for_month
+from services.working_hours import (
+    calculate_working_minutes,
+    hhmm_value_to_minutes,
+    minutes_to_hhmm_display,
+    minutes_to_hhmm_float,
+    parse_time_like,
+)
 
 # Employees in this set get empty Saturday + Sunday treated as Present (no punches).
 _WEEKEND_AUTO_PRESENT_EMAILS = frozenset({"adrija@industryprime.com"})
@@ -56,15 +63,7 @@ def _employee_email_lower(employee_id: str, supabase: SupabaseRest) -> Optional[
 
 
 def _parse_time(value: Any) -> Optional[time]:
-    if value in (None, ""):
-        return None
-    if isinstance(value, time):
-        return value.replace(second=0, microsecond=0)
-    text = str(value).strip()
-    if not text:
-        return None
-    parts = text.split(":")
-    return time(int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+    return parse_time_like(value)
 
 
 def _format_time(value: Any) -> Optional[str]:
@@ -80,13 +79,6 @@ def _hours_between(start: time, end: time) -> float:
     if end_minutes <= start_minutes:
         raise HTTPException(status_code=400, detail="Out time must be greater than In time")
     return round((end_minutes - start_minutes) / 60, 2)
-
-
-def _actual_hours(out_time: time) -> float:
-    start = time(9, 0)
-    start_minutes = start.hour * 60 + start.minute
-    out_minutes = out_time.hour * 60 + out_time.minute
-    return round(max(0, out_minutes - start_minutes) / 60, 2)
 
 
 def _required_hours(day: date) -> float:
@@ -142,6 +134,7 @@ def calculate_attendance_row(
             "out_time": None,
             "total_hours": 0,
             "working_hours": 0,
+            "working_hours_display": "0.00",
             "actual_hours": 0,
             "shortfall": 0,
             "status": "P",
@@ -162,6 +155,7 @@ def calculate_attendance_row(
             "out_time": None,
             "total_hours": 0,
             "working_hours": 0,
+            "working_hours_display": "0.00",
             "actual_hours": 0,
             "shortfall": 0,
             "status": "P",
@@ -181,6 +175,7 @@ def calculate_attendance_row(
             "out_time": None,
             "total_hours": 0,
             "working_hours": 0,
+            "working_hours_display": "0.00",
             "actual_hours": 0,
             "shortfall": 0,
             "status": "P",
@@ -203,6 +198,7 @@ def calculate_attendance_row(
             "out_time": None,
             "total_hours": 0,
             "working_hours": 0,
+            "working_hours_display": "0.00",
             "actual_hours": 0,
             "shortfall": 0,
             "status": "P",
@@ -221,6 +217,7 @@ def calculate_attendance_row(
             "in_time": _format_time(in_time),
             "out_time": _format_time(out_time),
             "working_hours": 0,
+            "working_hours_display": "0.00",
             "actual_hours": 0,
             "shortfall": _required_hours(day),
             "status": "A",
@@ -232,11 +229,14 @@ def calculate_attendance_row(
         }
 
     scheduled = _scheduled_hours_full_day(day, weekend_auto_present)
-    working = _hours_between(in_time, out_time)
-    actual = _actual_hours(out_time)
-    shortfall = round(max(0, scheduled - actual), 2)
+    scheduled_minutes = int(round(scheduled * 60))
+    working_minutes = calculate_working_minutes(in_time, out_time)
+    working = minutes_to_hhmm_float(working_minutes)
+    actual = working
+    shortfall_minutes = max(0, scheduled_minutes - working_minutes)
+    shortfall = minutes_to_hhmm_float(shortfall_minutes)
     late_time = _late_hours_after_cutoff(in_time)
-    base_status = "OT" if actual > scheduled else ("SF" if shortfall > 0 else "OK")
+    base_status = "OT" if working_minutes > scheduled_minutes else ("SF" if shortfall_minutes > 0 else "OK")
     status_ot_sf = "Late" if late_time > 0 else base_status
 
     return {
@@ -245,6 +245,7 @@ def calculate_attendance_row(
         "in_time": _format_time(in_time),
         "out_time": _format_time(out_time),
         "working_hours": working,
+        "working_hours_display": minutes_to_hhmm_display(working_minutes),
         "actual_hours": actual,
         "shortfall": shortfall,
         "status": "P",
@@ -275,13 +276,15 @@ def _stored_attendance_row(
     source: str = "manual",
     upload_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    actual_hours = float(row.get("actual_hours") if row.get("actual_hours") is not None else calculated["actual_hours"])
-    working_hours = float(row.get("working_hours") if row.get("working_hours") is not None else calculated["working_hours"])
+    # Production rule: derived hours always come from IN/OUT calculation logic.
+    working_hours = float(calculated["working_hours"])
+    actual_hours = float(calculated["actual_hours"])
     late_time = float(row.get("late_time") if row.get("late_time") is not None else calculated["late_time"])
     status = str(row.get("status") or calculated["status"])
     status_ot_sf = str(row.get("status_ot_sf") or calculated["status_ot_sf"])
     sched = float(calculated.get("scheduled_hours") or 9)
-    overtime_hours = max(0, actual_hours - sched)
+    overtime_minutes = max(0, hhmm_value_to_minutes(actual_hours) - int(round(sched * 60)))
+    overtime_hours = minutes_to_hhmm_float(overtime_minutes)
     out: Dict[str, Any] = {
         "employee_id": row["employee_id"],
         "date": str(row["date"])[:10],
@@ -379,8 +382,9 @@ def serialize_attendance_row(
             total_hours = calculated["total_hours"]
         else:
             total_hours = _required_hours(day)
-        working_hours = row.get("working_hours") if row.get("working_hours") is not None else calculated["working_hours"]
-        actual_hours = row.get("actual_hours") if row.get("actual_hours") is not None else calculated["actual_hours"]
+        # Ignore stored/manual hour overrides; compute fresh from IN/OUT.
+        working_hours = calculated["working_hours"]
+        actual_hours = calculated["actual_hours"]
         late_time = row.get("late_time")
         if late_time is None and row.get("late_minutes") is not None:
             late_time = float(row.get("late_minutes") or 0) / 60
@@ -403,6 +407,7 @@ def serialize_attendance_row(
         "out_location": row.get("out_location"),
         "total_hours": float(total_hours) if total_hours is not None else 0.0,
         "working_hours": float(working_hours),
+        "working_hours_display": minutes_to_hhmm_display(hhmm_value_to_minutes(working_hours)),
         "actual_hours": float(actual_hours),
         "shortfall": calculated["shortfall"],
         "present": "P" if status == "P" else "",

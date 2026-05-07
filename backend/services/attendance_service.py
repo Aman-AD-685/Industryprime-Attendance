@@ -7,6 +7,7 @@ from io import BytesIO
 from typing import Any, Dict, List, Tuple
 
 import pandas as pd
+from services.working_hours import calculate_working_hours, hhmm_value_to_minutes, minutes_to_hhmm_float
 
 # Expected column names in the uploaded Excel (case-insensitive match)
 REQUIRED_COLUMNS = [
@@ -70,12 +71,7 @@ def _combine_day_time(d: date, t: Any) -> datetime:
 
 
 def _working_hours(check_in: datetime, check_out: datetime) -> float:
-    delta = check_out - check_in
-    if delta.total_seconds() < 0:
-        # overnight shift: add one day to check_out
-        check_out = check_out + timedelta(days=1)
-        delta = check_out - check_in
-    return round(delta.total_seconds() / 3600.0, 2)
+    return calculate_working_hours(check_in.time(), check_out.time())
 
 
 def late_minutes_after_threshold(check_in: datetime, threshold: time = LATE_THRESHOLD) -> int:
@@ -87,9 +83,11 @@ def late_minutes_after_threshold(check_in: datetime, threshold: time = LATE_THRE
 
 
 def overtime_hours(working_h: float, regular: float = REGULAR_DAY_HOURS) -> float:
-    if working_h <= regular:
+    working_minutes = hhmm_value_to_minutes(working_h)
+    regular_minutes = int(round(regular * 60))
+    if working_minutes <= regular_minutes:
         return 0.0
-    return round(working_h - regular, 2)
+    return minutes_to_hhmm_float(working_minutes - regular_minutes)
 
 
 def apply_attendance_rules(
@@ -106,7 +104,8 @@ def apply_attendance_rules(
     late = late_minutes_after_threshold(check_in)
     ot = overtime_hours(working_h)
 
-    if working_h < HALF_DAY_MAX_HOURS:
+    working_minutes = hhmm_value_to_minutes(working_h)
+    if working_minutes < int(round(HALF_DAY_MAX_HOURS * 60)):
         return late, ot, "half_day"
     if late > 0 and ot > 0:
         return late, ot, "late_overtime"
