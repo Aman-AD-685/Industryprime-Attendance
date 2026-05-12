@@ -74,13 +74,22 @@ def _notify_leave_recipients(
     *,
     employee: Dict[str, Any],
     leave_row: Dict[str, Any],
-) -> None:
+) -> Dict[str, Any]:
     """
     Send leave request emails from legacy `/leave/requests` flow.
     Uses the service-role Supabase client for `email_lists` so RLS on that table
     does not hide recipients when the caller is a normal user JWT.
     Does not fail the request if email list table is missing/unmigrated or if SMTP fails.
+    Returns a small summary for the API response (check `email_notify` in production).
     """
+    summary: Dict[str, Any] = {
+        "loaded_lists": False,
+        "approval_list_count": 0,
+        "notification_list_count": 0,
+        "emails_sent_approval": 0,
+        "emails_sent_notification": 0,
+        "error": None,
+    }
     db_lists = get_supabase_service()
     try:
         approvals = db_lists.select(
@@ -97,15 +106,38 @@ def _notify_leave_recipients(
             order="created_at.desc",
             limit=200,
         )
-    except Exception:
-        return
+        summary["loaded_lists"] = True
+        summary["approval_list_count"] = len(approvals or [])
+        summary["notification_list_count"] = len(notifications or [])
+    except Exception as exc:
+        summary["error"] = f"email_lists_query_failed: {exc}"
+        logger.error(
+            "Leave notify: could not read public.email_lists with service role "
+            "(check SUPABASE_SERVICE_ROLE_KEY on the API host and table exists): %s",
+            exc,
+            exc_info=True,
+        )
+        return summary
 
     applicant_name = str(employee.get("name") or employee.get("employee_code") or "Employee")
     applicant_email = str(employee.get("email") or "")
     from_date = str(leave_row.get("leave_date_start") or "")
     to_date = str(leave_row.get("leave_date_end") or "")
     reason = str(leave_row.get("reason") or "")
-    leave_id = str(leave_row.get("id") or "")
+    leave_id = str(leave_row.get("id") or "").strip()
+    if not leave_id:
+        summary["error"] = "leave_row_missing_id_cannot_build_approval_links"
+        logger.error(
+            "Leave notify skipped: inserted leave row has no id (cannot send approval links). row_keys=%s",
+            list(leave_row.keys()) if isinstance(leave_row, dict) else type(leave_row),
+        )
+        return summary
+
+    if summary["approval_list_count"] == 0 and summary["notification_list_count"] == 0:
+        logger.warning(
+            "Leave notify: email_lists has no approval or notification rows; no emails sent. "
+            "Add rows in Settings → Email lists or run SQL against public.email_lists."
+        )
 
     try:
         for row in approvals or []:
@@ -135,6 +167,7 @@ def _notify_leave_recipients(
                 html=html,
                 text=f"Leave request for {applicant_name}: {from_date} -> {to_date}. Approve: {approve_url} Reject: {reject_url}",
             )
+            summary["emails_sent_approval"] += 1
 
         for row in notifications or []:
             to_email = str(row.get("email") or "").strip().lower()
@@ -156,13 +189,17 @@ def _notify_leave_recipients(
                 html=html,
                 text=f"FYI: {applicant_name} applied leave for {from_date} -> {to_date}.",
             )
+            summary["emails_sent_notification"] += 1
     except Exception as exc:
+        summary["error"] = f"send_failed: {exc}"
         logger.error(
             "Leave saved but notification email failed — set POSTMARK_* on the **API** host (not Vercel); "
             "use a live Postmark server token (sandbox does not inbox); verify POSTMARK_FROM_EMAIL sender: %s",
             exc,
             exc_info=True,
         )
+
+    return summary
 
 
 class LeaveDecisionBody(BaseModel):
@@ -288,8 +325,10 @@ def create_request(
             ) from e
         raise HTTPException(status_code=400, detail=f"Leave request could not be saved: {e}") from e
 
-    _notify_leave_recipients(employee=employee, leave_row=created)
-    return created
+    notify_meta = _notify_leave_recipients(employee=employee, leave_row=created)
+    if isinstance(created, dict):
+        return {**created, "email_notify": notify_meta}
+    return {"leave": created, "email_notify": notify_meta}
 
 
 @router.patch("/balances/{employee_id}", response_model=Dict[str, Any])

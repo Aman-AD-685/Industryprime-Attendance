@@ -137,7 +137,7 @@ export default function LeavePage() {
     setError(null);
     setInfo(null);
     try {
-      await apiFetch("/leave/requests", {
+      const res = (await apiFetch("/leave/requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -147,9 +147,33 @@ export default function LeavePage() {
           leave_date_end: form.leave_date_end,
           reason: form.reason.trim(),
         }),
-      });
+      })) as Record<string, unknown>;
       setForm(emptyForm);
-      setInfo("Leave request submitted successfully.");
+      const n = res.email_notify as
+        | {
+            loaded_lists?: boolean;
+            approval_list_count?: number;
+            notification_list_count?: number;
+            emails_sent_approval?: number;
+            emails_sent_notification?: number;
+            error?: string | null;
+          }
+        | undefined;
+      let msg = "Leave request submitted successfully.";
+      if (n && typeof n === "object") {
+        const appr = Number(n.emails_sent_approval) || 0;
+        const fy = Number(n.emails_sent_notification) || 0;
+        const err = n.error ? String(n.error) : "";
+        if (err) {
+          msg = `Leave saved. Email step: ${err.slice(0, 280)}${err.length > 280 ? "…" : ""}`;
+        } else if (appr + fy === 0) {
+          msg =
+            "Leave saved. No emails were sent (no rows in Email lists, or Postmark/API misconfigured on the server). Check Settings → Email lists and Postmark Activity.";
+        } else {
+          msg = `Leave saved. Emails sent: ${appr} approval link(s), ${fy} FYI notification(s).`;
+        }
+      }
+      setInfo(msg);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit leave request");
