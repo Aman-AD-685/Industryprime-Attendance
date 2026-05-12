@@ -193,13 +193,23 @@ def _test_redirect_address() -> str:
     return raw.strip().lower()
 
 
-def send_email(to: str | list[str], subject: str, html: str, text: Optional[str] = None) -> bool:
+def send_email(
+    to: str | list[str],
+    subject: str,
+    html: str,
+    text: Optional[str] = None,
+    *,
+    force_postmark_api: bool = False,
+) -> bool:
     """
     Send one message. Returns True if the message was accepted for delivery (Postmark API/SMTP success)
     or EMAIL_MODE=log (logged only, treated as success for workflows that allow dry-run).
 
     Returns False when EMAIL_MODE=postmark but no Postmark token is configured: logs intended recipients
     and does not raise (use for leave notifications). Signup/OTP should check the return value and raise.
+
+    force_postmark_api: when True, send only via Postmark HTTPS (never SMTP). Used by Settings → test email
+    so Render env POSTMARK_DELIVERY=smtp cannot hang on blocked port 587.
     """
     recipients: list[str]
     if isinstance(to, str):
@@ -247,6 +257,24 @@ def send_email(to: str | list[str], subject: str, html: str, text: Optional[str]
 
     sender = _postmark_from_email()
     stream = _postmark_message_stream()
+
+    if force_postmark_api:
+        _send_postmark_rest(
+            recipients=recipients,
+            subject=subject,
+            html=html,
+            text=text,
+            sender=sender,
+            stream=stream,
+        )
+        logger.info(
+            "Postmark REST (forced for test email) subject=%s to=%s stream=%s",
+            subject,
+            recipients,
+            stream,
+        )
+        return True
+
     # Default api: Postmark HTTPS (Render/Fly often block outbound SMTP 587 — avoids "timed out").
     # auto: same as api (no REST→SMTP fallback; use legacy only if you need that behavior).
     # smtp: SMTP only. legacy: try REST then SMTP on failure.

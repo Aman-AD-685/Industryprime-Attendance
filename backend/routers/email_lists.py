@@ -184,6 +184,7 @@ def send_test_email(
             subject="IndustryPrime email delivery test",
             html=html,
             text="IndustryPrime email test: delivery successful (or EMAIL_MODE=log — see API logs).",
+            force_postmark_api=True,
         )
     except Exception as exc:
         detail = str(exc)
@@ -193,7 +194,7 @@ def send_test_email(
                 " — On Render, outbound SMTP (port 587) is often blocked; use POSTMARK_DELIVERY=api "
                 "(default in newer builds) on the API service and redeploy."
             )
-        raise HTTPException(status_code=400, detail=f"Email test failed: {detail}") from exc
+        raise HTTPException(status_code=400, detail=f"Test email failed: {detail}") from exc
     if not ok:
         raise HTTPException(
             status_code=400,

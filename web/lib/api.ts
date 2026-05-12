@@ -5,6 +5,31 @@ import { API_BASE, effectiveApiBase } from "@/lib/envApi";
 
 export { API_BASE };
 
+/** FastAPI often returns `{ "detail": "..." }` — show plain text in the UI instead of raw JSON. */
+function formatBackendError(body: string): string {
+  const t = body.trim();
+  if (!t) return t;
+  try {
+    const j = JSON.parse(t) as { detail?: unknown };
+    const d = j.detail;
+    if (typeof d === "string") return d;
+    if (Array.isArray(d)) {
+      return d
+        .map((item) => {
+          if (typeof item === "object" && item !== null && "msg" in item) {
+            return String((item as { msg: string }).msg);
+          }
+          return String(item);
+        })
+        .join("; ");
+    }
+    if (d !== undefined && d !== null) return String(d);
+  } catch {
+    /* not JSON */
+  }
+  return t;
+}
+
 export async function getAccessToken(): Promise<string | null> {
   return getStoredToken();
 }
@@ -46,7 +71,7 @@ export async function apiFetch<T = any>(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(text || res.statusText);
+    throw new Error(formatBackendError(text) || res.statusText);
   }
   return (await res.json()) as T;
 }
@@ -71,7 +96,7 @@ export async function apiFetchBlob(path: string, init?: RequestInit): Promise<Bl
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(text || res.statusText);
+    throw new Error(formatBackendError(text) || res.statusText);
   }
   return res.blob();
 }
@@ -111,7 +136,7 @@ export async function publicApiFetch<T = unknown>(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(text || res.statusText);
+    throw new Error(formatBackendError(text) || res.statusText);
   }
   const text = await res.text();
   if (!text) return undefined as T;
