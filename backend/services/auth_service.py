@@ -291,16 +291,48 @@ def consume_pending_signup(email: str, supabase: Optional[SupabaseRest] = None) 
     if not pending:
         return None
     clean_email = normalize_email(email)
-    rows = db.insert_many(
-        table="users",
-        rows=[
-            {
-                "name": str(pending["name"]).strip(),
-                "email": clean_email,
-                "password_hash": str(pending["password_hash"]),
-                "role": "user",
-            }
-        ],
-        return_representation=True,
+    return create_registered_user(
+        name=str(pending["name"]),
+        email=clean_email,
+        password_hash=str(pending["password_hash"]),
+        supabase=db,
     )
+
+
+def create_registered_user(
+    *,
+    name: str,
+    email: str,
+    password_hash: str,
+    supabase: Optional[SupabaseRest] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Insert a finalized `users` row (password already hashed). Used after OTP / pending signup.
+    """
+    db = supabase or get_supabase_service()
+    clean_email = normalize_email(email)
+    if get_user_by_email(clean_email, db):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists")
+    try:
+        rows = db.insert_many(
+            table="users",
+            rows=[
+                {
+                    "name": name.strip(),
+                    "email": clean_email,
+                    "password_hash": password_hash,
+                    "role": "user",
+                }
+            ],
+            return_representation=True,
+        )
+    except RuntimeError as exc:
+        if _is_missing_users_table(exc):
+            if _allow_local_auth_fallback():
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Stateless signup requires the Supabase `users` table (run auth_schema.sql) or disable OTP tables and use dev auth per docs.",
+                ) from exc
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=AUTH_SCHEMA_HINT) from exc
+        raise
     return rows[0] if rows else None

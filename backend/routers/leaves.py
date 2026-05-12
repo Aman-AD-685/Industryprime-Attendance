@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
@@ -16,6 +17,7 @@ from services.email_service import render_email_template, send_email
 import os
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _now_utc() -> datetime:
@@ -88,75 +90,82 @@ def apply_leave(
     approval_rows = _list_recipients("approval")
     notification_rows = _list_recipients("notification")
 
-    for r in approval_rows:
-        to_email = str(r.get("email") or "").strip().lower()
-        if not to_email:
-            continue
-        approve_token = make_decision_token(leave_id=leave_id, email=to_email, action="approve")
-        reject_token = make_decision_token(leave_id=leave_id, email=to_email, action="reject")
-        db.insert_many(
-            table="leave_decision_tokens",
-            rows=[
+    try:
+        for r in approval_rows:
+            to_email = str(r.get("email") or "").strip().lower()
+            if not to_email:
+                continue
+            approve_token = make_decision_token(leave_id=leave_id, email=to_email, action="approve")
+            reject_token = make_decision_token(leave_id=leave_id, email=to_email, action="reject")
+            db.insert_many(
+                table="leave_decision_tokens",
+                rows=[
+                    {
+                        "token": approve_token,
+                        "leave_id": leave_id,
+                        "recipient_email": to_email,
+                        "action": "approve",
+                        "expires_at": expiry.isoformat(),
+                    },
+                    {
+                        "token": reject_token,
+                        "leave_id": leave_id,
+                        "recipient_email": to_email,
+                        "action": "reject",
+                        "expires_at": expiry.isoformat(),
+                    },
+                ],
+                return_representation=False,
+            )
+            approve_q = urlencode({"action": "approve", "token": approve_token})
+            reject_q = urlencode({"action": "reject", "token": reject_token})
+            approve_url = f"{_frontend_base()}/leaves/{leave_id}/decide?{approve_q}"
+            reject_url = f"{_frontend_base()}/leaves/{leave_id}/decide?{reject_q}"
+            html = render_email_template(
+                "leave_approval_request.html",
                 {
-                    "token": approve_token,
+                    "applicant_name": applicant_name,
+                    "applicant_email": applicant_email,
+                    "from_date": fd.isoformat(),
+                    "to_date": td.isoformat(),
+                    "reason": payload.reason.strip(),
+                    "approve_url": approve_url,
+                    "reject_url": reject_url,
                     "leave_id": leave_id,
-                    "recipient_email": to_email,
-                    "action": "approve",
-                    "expires_at": expiry.isoformat(),
                 },
-                {
-                    "token": reject_token,
-                    "leave_id": leave_id,
-                    "recipient_email": to_email,
-                    "action": "reject",
-                    "expires_at": expiry.isoformat(),
-                },
-            ],
-            return_representation=False,
-        )
-        approve_q = urlencode({"action": "approve", "token": approve_token})
-        reject_q = urlencode({"action": "reject", "token": reject_token})
-        approve_url = f"{_frontend_base()}/leaves/{leave_id}/decide?{approve_q}"
-        reject_url = f"{_frontend_base()}/leaves/{leave_id}/decide?{reject_q}"
-        html = render_email_template(
-            "leave_approval_request.html",
-            {
-                "applicant_name": applicant_name,
-                "applicant_email": applicant_email,
-                "from_date": fd.isoformat(),
-                "to_date": td.isoformat(),
-                "reason": payload.reason.strip(),
-                "approve_url": approve_url,
-                "reject_url": reject_url,
-                "leave_id": leave_id,
-            },
-        )
-        send_email(
-            to_email,
-            subject=f"Leave Approval Request — {applicant_name} ({fd.isoformat()} -> {td.isoformat()})",
-            html=html,
-            text=f"Leave request from {applicant_name}. Approve: {approve_url} Reject: {reject_url}",
-        )
+            )
+            send_email(
+                to_email,
+                subject=f"Leave Approval Request — {applicant_name} ({fd.isoformat()} -> {td.isoformat()})",
+                html=html,
+                text=f"Leave request from {applicant_name}. Approve: {approve_url} Reject: {reject_url}",
+            )
 
-    for r in notification_rows:
-        to_email = str(r.get("email") or "").strip().lower()
-        if not to_email:
-            continue
-        html = render_email_template(
-            "leave_notification.html",
-            {
-                "applicant_name": applicant_name,
-                "applicant_email": applicant_email,
-                "from_date": fd.isoformat(),
-                "to_date": td.isoformat(),
-                "reason": payload.reason.strip(),
-            },
-        )
-        send_email(
-            to_email,
-            subject=f"Leave Applied — {applicant_name} ({fd.isoformat()} -> {td.isoformat()})",
-            html=html,
-            text=f"FYI: Leave applied by {applicant_name} for {fd.isoformat()} to {td.isoformat()}",
+        for r in notification_rows:
+            to_email = str(r.get("email") or "").strip().lower()
+            if not to_email:
+                continue
+            html = render_email_template(
+                "leave_notification.html",
+                {
+                    "applicant_name": applicant_name,
+                    "applicant_email": applicant_email,
+                    "from_date": fd.isoformat(),
+                    "to_date": td.isoformat(),
+                    "reason": payload.reason.strip(),
+                },
+            )
+            send_email(
+                to_email,
+                subject=f"Leave Applied — {applicant_name} ({fd.isoformat()} -> {td.isoformat()})",
+                html=html,
+                text=f"FYI: Leave applied by {applicant_name} for {fd.isoformat()} to {td.isoformat()}",
+            )
+    except Exception as exc:
+        logger.warning(
+            "Leave saved but email/token notify failed (check POSTMARK_* on the API host): %s",
+            exc,
+            exc_info=True,
         )
 
     record_audit_event(

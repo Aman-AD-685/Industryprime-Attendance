@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Any, Dict, List, Optional
 import os
@@ -25,6 +26,7 @@ from services.email_service import render_email_template, send_email
 from services.decision_token_service import make_decision_token, verify_decision_token
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _frontend_base() -> str:
@@ -77,7 +79,7 @@ def _notify_leave_recipients(
 ) -> None:
     """
     Send leave request emails from legacy `/leave/requests` flow.
-    Does not fail the request if email list table is missing/unmigrated.
+    Does not fail the request if email list table is missing/unmigrated or if SMTP fails.
     """
     try:
         approvals = supabase.select(
@@ -103,55 +105,61 @@ def _notify_leave_recipients(
     to_date = str(leave_row.get("leave_date_end") or "")
     reason = str(leave_row.get("reason") or "")
     leave_id = str(leave_row.get("id") or "")
-    tenant_id = str(leave_row.get("tenant_id") or "")
 
-    for row in approvals or []:
-        to_email = str(row.get("email") or "").strip().lower()
-        if not to_email:
-            continue
-        approve_token = make_decision_token(leave_id=leave_id, email=to_email, action="approve")
-        reject_token = make_decision_token(leave_id=leave_id, email=to_email, action="reject")
-        approve_url = f"{_frontend_base()}/leave/requests/{leave_id}/decide?action=approve&token={approve_token}"
-        reject_url = f"{_frontend_base()}/leave/requests/{leave_id}/decide?action=reject&token={reject_token}"
-        html = render_email_template(
-            "leave_approval_request.html",
-            {
-                "applicant_name": applicant_name,
-                "applicant_email": applicant_email,
-                "from_date": from_date,
-                "to_date": to_date,
-                "reason": reason,
-                "approve_url": approve_url,
-                "reject_url": reject_url,
-                "leave_id": leave_id,
-            },
-        )
-        send_email(
-            to_email,
-            subject=f"Leave Approval Request — {applicant_name} ({from_date} -> {to_date})",
-            html=html,
-            text=f"Leave request for {applicant_name}: {from_date} -> {to_date}. Approve: {approve_url} Reject: {reject_url}",
-        )
+    try:
+        for row in approvals or []:
+            to_email = str(row.get("email") or "").strip().lower()
+            if not to_email:
+                continue
+            approve_token = make_decision_token(leave_id=leave_id, email=to_email, action="approve")
+            reject_token = make_decision_token(leave_id=leave_id, email=to_email, action="reject")
+            approve_url = f"{_frontend_base()}/leave/requests/{leave_id}/decide?action=approve&token={approve_token}"
+            reject_url = f"{_frontend_base()}/leave/requests/{leave_id}/decide?action=reject&token={reject_token}"
+            html = render_email_template(
+                "leave_approval_request.html",
+                {
+                    "applicant_name": applicant_name,
+                    "applicant_email": applicant_email,
+                    "from_date": from_date,
+                    "to_date": to_date,
+                    "reason": reason,
+                    "approve_url": approve_url,
+                    "reject_url": reject_url,
+                    "leave_id": leave_id,
+                },
+            )
+            send_email(
+                to_email,
+                subject=f"Leave Approval Request — {applicant_name} ({from_date} -> {to_date})",
+                html=html,
+                text=f"Leave request for {applicant_name}: {from_date} -> {to_date}. Approve: {approve_url} Reject: {reject_url}",
+            )
 
-    for row in notifications or []:
-        to_email = str(row.get("email") or "").strip().lower()
-        if not to_email:
-            continue
-        html = render_email_template(
-            "leave_notification.html",
-            {
-                "applicant_name": applicant_name,
-                "applicant_email": applicant_email,
-                "from_date": from_date,
-                "to_date": to_date,
-                "reason": reason,
-            },
-        )
-        send_email(
-            to_email,
-            subject=f"Leave Applied — {applicant_name} ({from_date} -> {to_date})",
-            html=html,
-            text=f"FYI: {applicant_name} applied leave for {from_date} -> {to_date}.",
+        for row in notifications or []:
+            to_email = str(row.get("email") or "").strip().lower()
+            if not to_email:
+                continue
+            html = render_email_template(
+                "leave_notification.html",
+                {
+                    "applicant_name": applicant_name,
+                    "applicant_email": applicant_email,
+                    "from_date": from_date,
+                    "to_date": to_date,
+                    "reason": reason,
+                },
+            )
+            send_email(
+                to_email,
+                subject=f"Leave Applied — {applicant_name} ({from_date} -> {to_date})",
+                html=html,
+                text=f"FYI: {applicant_name} applied leave for {from_date} -> {to_date}.",
+            )
+    except Exception as exc:
+        logger.warning(
+            "Leave saved but notification email failed (check POSTMARK_* on the API host, not only Vercel): %s",
+            exc,
+            exc_info=True,
         )
 
 
@@ -264,13 +272,22 @@ def create_request(
             supabase=supabase,
             tenant_id=auth.tenant_id,
         )
-        _notify_leave_recipients(employee=employee, leave_row=created, supabase=supabase)
-        return created
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Leave request could not be saved. Run backend/database/payroll_leave_update.sql in Supabase. {e}",
-        ) from e
+        low = str(e).lower()
+        if "leave_requests" in low and ("pgrst205" in low or "schema cache" in low or "could not find" in low):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Leave request could not be saved: the `leave_requests` table or columns may be missing. "
+                    "Run `backend/database/payroll_leave_update.sql` in the Supabase SQL editor, then retry."
+                ),
+            ) from e
+        raise HTTPException(status_code=400, detail=f"Leave request could not be saved: {e}") from e
+
+    _notify_leave_recipients(employee=employee, leave_row=created, supabase=supabase)
+    return created
 
 
 @router.patch("/balances/{employee_id}", response_model=Dict[str, Any])
