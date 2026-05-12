@@ -162,8 +162,8 @@ def apply_leave(
                 text=f"FYI: Leave applied by {applicant_name} for {fd.isoformat()} to {td.isoformat()}",
             )
     except Exception as exc:
-        logger.warning(
-            "Leave saved but email/token notify failed (check POSTMARK_* on the API host): %s",
+        logger.error(
+            "Leave saved but email/token notify failed — POSTMARK_* on API host; live token + verified From: %s",
             exc,
             exc_info=True,
         )

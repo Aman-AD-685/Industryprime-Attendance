@@ -36,14 +36,19 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
 
-def _smtp_config() -> Dict[str, str]:
-    # Support both preferred names and legacy aliases used in local env files.
-    password = (
-        _env("POSTMARK_SMTP_TOKEN")
-        or _env("POSTMARK_SERVER_TOKEN")
+def _postmark_server_token() -> str:
+    """Postmark Server API token (same value used for SMTP password on most accounts)."""
+    return (
+        _env("POSTMARK_SERVER_TOKEN")
+        or _env("POSTMARK_SMTP_TOKEN")
         or _env("POSTMARK_SMTP_SECRET_KEY")
         or _env("POSTMARK_SMTP_Secret_key")
     )
+
+
+def _smtp_config() -> Dict[str, str]:
+    # Support both preferred names and legacy aliases used in local env files.
+    password = _postmark_server_token()
     if not password:
         raise RuntimeError(
             "Missing SMTP password env var. Set POSTMARK_SMTP_TOKEN "
@@ -61,6 +66,62 @@ def _smtp_config() -> Dict[str, str]:
         "username": username,
         "password": password,
     }
+
+
+def _send_postmark_rest(
+    *,
+    recipients: list[str],
+    subject: str,
+    html: str,
+    text: Optional[str],
+    sender: str,
+    stream: str,
+) -> None:
+    """
+    HTTPS delivery to Postmark (api.postmarkapp.com). Prefer this in production when
+    outbound SMTP (port 587) is blocked; uses the same server token as SMTP.
+    Sends one API call per recipient (Postmark-recommended for tracking and fewer rejections).
+    """
+    try:
+        from postmarker.core import PostmarkClient
+        from postmarker.exceptions import ClientError
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("Install postmarker (see backend/requirements.txt)") from exc
+    token = _postmark_server_token()
+    if not token:
+        raise RuntimeError(
+            "Missing Postmark token for REST API. Set POSTMARK_SERVER_TOKEN or POSTMARK_SMTP_TOKEN."
+        )
+    timeout_raw = _env("POSTMARK_API_TIMEOUT", "30") or "30"
+    try:
+        timeout_sec = max(5, min(120, int(timeout_raw)))
+    except ValueError:
+        timeout_sec = 30
+    client = PostmarkClient(server_token=token, timeout=timeout_sec)
+    text_body = text or "This email requires an HTML-capable client."
+    for addr in recipients:
+        kwargs: Dict[str, Any] = {
+            "From": sender,
+            "To": addr,
+            "Subject": subject,
+            "HtmlBody": html,
+            "TextBody": text_body,
+        }
+        if stream:
+            kwargs["MessageStream"] = stream
+        try:
+            resp = client.emails.send(**kwargs)
+        except ClientError as exc:
+            code = getattr(exc, "error_code", None)
+            msg = str(exc)
+            logger.error("Postmark API rejected email to=%s code=%s: %s", addr, code, msg)
+            raise RuntimeError(
+                f"Postmark API error (check From/sender domain and server token; sandbox tokens do not deliver to real inboxes): {msg}"
+            ) from exc
+        mid = None
+        if isinstance(resp, dict):
+            mid = resp.get("MessageID") or resp.get("MessageId")
+        logger.info("Postmark REST email sent to=%s MessageID=%s stream=%s", addr, mid, stream or "default")
 
 
 def render_email_template(template_name: str, context: Dict[str, Any]) -> str:
@@ -88,6 +149,37 @@ def send_email(to: str | list[str], subject: str, html: str, text: Optional[str]
 
     sender = _env("POSTMARK_FROM_EMAIL", "aman@industryprime.com")
     stream = _env("POSTMARK_MESSAGE_STREAM", "outbound")
+    # auto: try Postmark HTTPS API first (works when cloud hosts block SMTP 587), then SMTP.
+    # smtp: SMTP only. api: REST only (no fallback).
+    mode = _env("POSTMARK_DELIVERY", "auto").lower()
+
+    if mode in ("api", "rest", "http"):
+        _send_postmark_rest(
+            recipients=recipients,
+            subject=subject,
+            html=html,
+            text=text,
+            sender=sender,
+            stream=stream,
+        )
+        logger.info("Postmark REST email sent subject=%s to=%s stream=%s", subject, recipients, stream)
+        return
+
+    if mode not in ("smtp", "legacy") and _postmark_server_token():
+        try:
+            _send_postmark_rest(
+                recipients=recipients,
+                subject=subject,
+                html=html,
+                text=text,
+                sender=sender,
+                stream=stream,
+            )
+            logger.info("Postmark REST email sent subject=%s to=%s stream=%s", subject, recipients, stream)
+            return
+        except Exception as exc:
+            logger.warning("Postmark REST send failed, falling back to SMTP: %s", exc)
+
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = sender

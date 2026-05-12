@@ -156,8 +156,9 @@ def _notify_leave_recipients(
                 text=f"FYI: {applicant_name} applied leave for {from_date} -> {to_date}.",
             )
     except Exception as exc:
-        logger.warning(
-            "Leave saved but notification email failed (check POSTMARK_* on the API host, not only Vercel): %s",
+        logger.error(
+            "Leave saved but notification email failed — set POSTMARK_* on the **API** host (not Vercel); "
+            "use a live Postmark server token (sandbox does not inbox); verify POSTMARK_FROM_EMAIL sender: %s",
             exc,
             exc_info=True,
         )
