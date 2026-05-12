@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signupResend, signupVerify } from "@/lib/auth";
 
@@ -8,13 +8,26 @@ function parseEmail(raw: string | null): string {
   return (raw || "").trim().toLowerCase();
 }
 
-function SignupVerifyContent() {  const router = useRouter();
+const SIGNUP_TICKET_KEY = "industryprime.signupTicket";
+
+function SignupVerifyContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const email = useMemo(() => parseEmail(searchParams.get("email")), [searchParams]);
   const [digits, setDigits] = useState<string[]>(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [signupTicket, setSignupTicket] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      setSignupTicket(sessionStorage.getItem(SIGNUP_TICKET_KEY));
+    } catch {
+      setSignupTicket(null);
+    }
+  }, []);
+
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
@@ -57,7 +70,12 @@ function SignupVerifyContent() {  const router = useRouter();
     }
     setLoading(true);
     try {
-      await signupVerify(email, code);
+      await signupVerify(email, code, signupTicket ?? undefined);
+      try {
+        sessionStorage.removeItem(SIGNUP_TICKET_KEY);
+      } catch {
+        /* ignore */
+      }
       router.replace("/dashboard");
       router.refresh();
     } catch (err) {
@@ -73,7 +91,15 @@ function SignupVerifyContent() {  const router = useRouter();
     setError(null);
     setInfo(null);
     try {
-      await signupResend(email);
+      const res = await signupResend(email, signupTicket ?? undefined);
+      if (res.signup_ticket) {
+        try {
+          sessionStorage.setItem(SIGNUP_TICKET_KEY, res.signup_ticket);
+          setSignupTicket(res.signup_ticket);
+        } catch {
+          /* ignore */
+        }
+      }
       setInfo("A new code was sent.");
       setCooldown(60);
       const timer = window.setInterval(() => {

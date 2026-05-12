@@ -21,9 +21,41 @@ from services.auth_service import (
 )
 from services.audit_service import record_audit_event
 from services.otp_service import issue_otp, verify_latest_otp
+from services.signup_stateless import (
+    complete_stateless_signup,
+    resend_stateless_signup,
+    signup_otp_tables_available,
+    start_stateless_signup,
+)
 
 
 router = APIRouter()
+
+_OTP_SCHEMA_HINT = (
+    "Signup requires tables `pending_signups` and `otp_codes`. "
+    "In the Supabase SQL editor, run `backend/database/otp_schema.sql`, then try again."
+)
+
+
+def _raise_if_signup_infra_error(exc: Exception) -> None:
+    """Turn missing Supabase tables / missing SMTP config into HTTP errors with actionable text."""
+    if isinstance(exc, HTTPException):
+        raise exc
+    raw = str(exc)
+    low = raw.lower()
+    if "pgrst205" in low or (
+        "could not find the table" in low and ("pending_signups" in low or "otp_codes" in low)
+    ):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_OTP_SCHEMA_HINT) from exc
+    if "missing smtp password env var" in low:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Cannot send the signup code: Postmark SMTP is not configured. "
+                "Set POSTMARK_SMTP_TOKEN or POSTMARK_SERVER_TOKEN (and POSTMARK_FROM_EMAIL) in backend/.env."
+            ),
+        ) from exc
+    raise exc
 
 
 class SignupRequest(BaseModel):
@@ -48,10 +80,12 @@ class RoleUpdateRequest(BaseModel):
 class SignupVerifyRequest(BaseModel):
     email: str = Field(..., min_length=5, max_length=255)
     code: str = Field(..., min_length=6, max_length=6)
+    signup_ticket: Optional[str] = None
 
 
 class SignupResendRequest(BaseModel):
     email: str = Field(..., min_length=5, max_length=255)
+    signup_ticket: Optional[str] = None
 
 
 def _validate_email_like(email: str) -> str:
@@ -65,44 +99,86 @@ def _validate_email_like(email: str) -> str:
 def signup_start(payload: SignupRequest):
     clean_email = _validate_email_like(payload.email)
     supabase = get_supabase_service()
-    create_pending_signup(
-        payload.name.strip(),
-        clean_email,
-        hash_password(payload.password),
-        supabase=supabase,
-    )
-    issue_otp(
-        supabase,
-        email=clean_email,
-        purpose="signup",
-        subject="Your IndustryPrime signup code",
-    )
-    return {"otp_sent": True, "email": clean_email}
+    if signup_otp_tables_available(supabase):
+        try:
+            create_pending_signup(
+                payload.name.strip(),
+                clean_email,
+                hash_password(payload.password),
+                supabase=supabase,
+            )
+            issue_otp(
+                supabase,
+                email=clean_email,
+                purpose="signup",
+                subject="Your IndustryPrime signup code",
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _raise_if_signup_infra_error(exc)
+        return {"otp_sent": True, "email": clean_email}
+    try:
+        ticket = start_stateless_signup(
+            supabase=supabase,
+            name=payload.name.strip(),
+            email=clean_email,
+            password_plain=payload.password,
+            subject="Your IndustryPrime signup code",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_if_signup_infra_error(exc)
+    return {"otp_sent": True, "email": clean_email, "signup_ticket": ticket}
 
 
 @router.post("/signup/verify", response_model=Dict[str, Any])
 def signup_verify(payload: SignupVerifyRequest):
     clean_email = _validate_email_like(payload.email)
     supabase = get_supabase_service()
-    pending = get_pending_signup(clean_email, supabase)
-    if not pending:
-        raise HTTPException(status_code=400, detail="No pending signup found. Start signup again.")
-    verify_latest_otp(
-        supabase,
-        email=clean_email,
-        purpose="signup",
-        code=payload.code,
-    )
-    user = consume_pending_signup(clean_email, supabase)
+    ticket = (payload.signup_ticket or "").strip()
+    user: Optional[Dict[str, Any]] = None
+    if ticket:
+        try:
+            user = complete_stateless_signup(
+                supabase=supabase,
+                expected_email=clean_email,
+                signup_ticket=ticket,
+                code=payload.code,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _raise_if_signup_infra_error(exc)
+    else:
+        try:
+            pending = get_pending_signup(clean_email, supabase)
+            if not pending:
+                raise HTTPException(status_code=400, detail="No pending signup found. Start signup again.")
+            verify_latest_otp(
+                supabase,
+                email=clean_email,
+                purpose="signup",
+                code=payload.code,
+            )
+            user = consume_pending_signup(clean_email, supabase)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _raise_if_signup_infra_error(exc)
     if not user:
         raise HTTPException(status_code=500, detail="Signup verification failed.")
-    record_audit_event(
-        supabase,
-        actor_email=clean_email,
-        action="signup_verified",
-        target_id=str(user.get("id")),
-        metadata={"email": clean_email},
-    )
+    try:
+        record_audit_event(
+            supabase,
+            actor_email=clean_email,
+            action="signup_verified",
+            target_id=str(user.get("id")),
+            metadata={"email": clean_email},
+        )
+    except Exception:
+        pass
     return {
         "access_token": create_access_token(user),
         "token_type": "bearer",
@@ -114,14 +190,32 @@ def signup_verify(payload: SignupVerifyRequest):
 def signup_resend(payload: SignupResendRequest):
     clean_email = _validate_email_like(payload.email)
     supabase = get_supabase_service()
-    if not get_pending_signup(clean_email, supabase):
-        raise HTTPException(status_code=400, detail="No pending signup found.")
-    issue_otp(
-        supabase,
-        email=clean_email,
-        purpose="signup",
-        subject="Your IndustryPrime signup code",
-    )
+    ticket = (payload.signup_ticket or "").strip()
+    if ticket:
+        try:
+            new_ticket = resend_stateless_signup(
+                expected_email=clean_email,
+                previous_ticket=ticket,
+                subject="Your IndustryPrime signup code",
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _raise_if_signup_infra_error(exc)
+        return {"otp_sent": True, "email": clean_email, "signup_ticket": new_ticket}
+    try:
+        if not get_pending_signup(clean_email, supabase):
+            raise HTTPException(status_code=400, detail="No pending signup found.")
+        issue_otp(
+            supabase,
+            email=clean_email,
+            purpose="signup",
+            subject="Your IndustryPrime signup code",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_if_signup_infra_error(exc)
     return {"otp_sent": True, "email": clean_email}
 
 

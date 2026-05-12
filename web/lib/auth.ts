@@ -21,6 +21,8 @@ type AuthResponse = {
 type SignupStartResponse = {
   otp_sent: boolean;
   email: string;
+  /** Present when Supabase OTP tables are not migrated; pass to verify/resend. */
+  signup_ticket?: string;
 };
 
 const TOKEN_KEY = "industryprime.authToken";
@@ -201,10 +203,16 @@ export async function signupStart(name: string, email: string, password: string)
   });
 }
 
-export async function signupVerify(email: string, code: string): Promise<AuthUser> {
+export async function signupVerify(
+  email: string,
+  code: string,
+  signupTicket?: string | null,
+): Promise<AuthUser> {
+  const body: Record<string, string> = { email, code };
+  if (signupTicket?.trim()) body.signup_ticket = signupTicket.trim();
   const data = await authRequest<AuthResponse>("/auth/signup/verify", {
     method: "POST",
-    body: JSON.stringify({ email, code }),
+    body: JSON.stringify(body),
   });
   if (!data?.access_token || !data?.user) {
     throw new Error("Signup verification response missing token or user profile.");
@@ -213,10 +221,15 @@ export async function signupVerify(email: string, code: string): Promise<AuthUse
   return data.user;
 }
 
-export async function signupResend(email: string): Promise<SignupStartResponse> {
+export async function signupResend(
+  email: string,
+  signupTicket?: string | null,
+): Promise<SignupStartResponse> {
+  const body: Record<string, string> = { email };
+  if (signupTicket?.trim()) body.signup_ticket = signupTicket.trim();
   return authRequest<SignupStartResponse>("/auth/signup/resend", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify(body),
   });
 }
 

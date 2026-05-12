@@ -1,5 +1,7 @@
 create extension if not exists pgcrypto;
 
+-- OTP signup storage. Recommended for production (rate limits + audit).
+-- Without these tables, the API uses a signed signup_ticket in the browser until you run this script.
 create table if not exists public.pending_signups (
   email text primary key,
   name text not null,

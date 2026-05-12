@@ -26,6 +26,15 @@ export default function SignupPage() {
     setInfo(null);
     try {
       const res = await signupStart(name.trim(), email.trim(), password);
+      try {
+        if (res.signup_ticket) {
+          sessionStorage.setItem("industryprime.signupTicket", res.signup_ticket);
+        } else {
+          sessionStorage.removeItem("industryprime.signupTicket");
+        }
+      } catch {
+        /* private mode / quota */
+      }
       setInfo("Verification code sent to your email.");
       setTimeout(() => router.replace(`/signup/verify?email=${encodeURIComponent(res.email)}`), 400);
     } catch (err) {
