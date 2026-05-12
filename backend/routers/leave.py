@@ -21,7 +21,7 @@ from services.leave_service import (
 )
 from dependencies.auth_dependency import get_auth_context
 from services.auth_service import require_role
-from services.email_service import render_email_template, send_email
+from services.email_service import email_delivery_mode, render_email_template, send_email
 from services.decision_token_service import make_decision_token, verify_decision_token
 
 router = APIRouter()
@@ -89,6 +89,7 @@ def _notify_leave_recipients(
         "emails_sent_approval": 0,
         "emails_sent_notification": 0,
         "error": None,
+        "delivery_mode": email_delivery_mode(),
     }
     db_lists = get_supabase_service()
     try:

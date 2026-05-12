@@ -25,7 +25,8 @@ _MISSING_POSTMARK_ON_API_HOST = (
     "Postmark is not configured on the FastAPI server (this is separate from Supabase). "
     "Supabase Dashboard → Authentication → Email/SMTP only affects Supabase Auth emails (e.g. magic links), "
     "not leave or OTP mail from this app. Set POSTMARK_SERVER_TOKEN or POSTMARK_SMTP_TOKEN plus "
-    "POSTMARK_FROM_EMAIL on the host that runs the API (Render/Railway/backend/.env), then redeploy."
+    "POSTMARK_FROM_EMAIL on the host that runs the API (Render/Railway/backend/.env), then redeploy. "
+    "Or set EMAIL_MODE=log to skip delivery and only log intended recipients (no Postmark required)."
 )
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "emails"
@@ -42,6 +43,17 @@ _jinja = (
 def _env(name: str, default: str = "") -> str:
     _bootstrap_backend_env()
     return os.getenv(name, default).strip()
+
+
+def email_delivery_mode() -> str:
+    """
+    postmark — real delivery via Postmark (requires POSTMARK_SERVER_TOKEN / SMTP token + FROM).
+    log — no outbound mail; send_email logs intended recipients (use on API host until Postmark is set).
+    """
+    m = _env("EMAIL_MODE", "postmark").lower()
+    if m in ("log", "console", "local", "disabled", "dry_run", "dry-run"):
+        return "log"
+    return "postmark"
 
 
 def _postmark_server_token() -> str:
@@ -141,6 +153,14 @@ def render_email_template(template_name: str, context: Dict[str, Any]) -> str:
     return tpl.render(**context)
 
 
+def _test_redirect_address() -> str:
+    """If set, all recipients are replaced with this address (Postmark must still be configured)."""
+    raw = _env("EMAIL_TEST_REDIRECT", "")
+    if not raw or "@" not in raw:
+        return ""
+    return raw.strip().lower()
+
+
 def send_email(to: str | list[str], subject: str, html: str, text: Optional[str] = None) -> None:
     recipients: list[str]
     if isinstance(to, str):
@@ -149,6 +169,31 @@ def send_email(to: str | list[str], subject: str, html: str, text: Optional[str]
         recipients = [str(addr).strip() for addr in to if str(addr).strip()]
     if not recipients:
         raise RuntimeError("send_email requires at least one recipient")
+
+    if email_delivery_mode() == "log":
+        preview = (html or "")[:800].replace("\n", " ")
+        logger.info(
+            "EMAIL_MODE=log — would send subject=%r to=%s html_preview=%s",
+            subject,
+            recipients,
+            preview,
+        )
+        return
+
+    redirect = _test_redirect_address()
+    if redirect:
+        orig_txt = ", ".join(recipients)
+        recipients = [redirect]
+        subject = f"[TEST redirect] {subject}"
+        inject = (
+            f'<hr><p style="font-size:12px;color:#444"><strong>Test redirect:</strong> '
+            f"would have gone to: {orig_txt}</p>"
+        )
+        html = f"{html or ''}{inject}"
+        if text:
+            text = f"{text}\n\n[Test redirect — intended recipients: {orig_txt}]"
+        else:
+            text = f"[Test redirect — intended recipients: {orig_txt}]"
 
     sender = _env("POSTMARK_FROM_EMAIL", "aman@industryprime.com")
     stream = _env("POSTMARK_MESSAGE_STREAM", "outbound")

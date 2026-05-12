@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from database.supabase_client import get_supabase_service
 from dependencies.auth_dependency import get_auth_context
 from services.auth_service import require_role
-from services.email_service import send_email
+from services.email_service import email_delivery_mode, send_email
 
 router = APIRouter()
 
@@ -171,16 +171,16 @@ def send_test_email(
 
     html = (
         "<html><body><h3>IndustryPrime test email</h3>"
-        "<p>SMTP is configured and reachable from backend.</p>"
+        "<p>This exercises the same <code>send_email</code> path as leave and OTP mail.</p>"
         "<p>Sent by IndustryPrime · aman@industryprime.com</p></body></html>"
     )
     try:
         send_email(
             to=to_email,
-            subject="IndustryPrime SMTP Test Email",
+            subject="IndustryPrime email delivery test",
             html=html,
-            text="IndustryPrime SMTP test email: delivery successful.",
+            text="IndustryPrime email test: delivery successful (or EMAIL_MODE=log — see API logs).",
         )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"SMTP test failed: {exc}") from exc
-    return {"ok": True, "to_email": to_email}
+        raise HTTPException(status_code=400, detail=f"Email test failed: {exc}") from exc
+    return {"ok": True, "to_email": to_email, "delivery_mode": email_delivery_mode()}
