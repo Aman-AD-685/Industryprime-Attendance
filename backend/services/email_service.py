@@ -20,6 +20,14 @@ from database.supabase_client import _bootstrap_backend_env
 
 logger = logging.getLogger(__name__)
 
+# Shown when POSTMARK_* are unset on the Python process (Supabase Dashboard SMTP is unrelated).
+_MISSING_POSTMARK_ON_API_HOST = (
+    "Postmark is not configured on the FastAPI server (this is separate from Supabase). "
+    "Supabase Dashboard → Authentication → Email/SMTP only affects Supabase Auth emails (e.g. magic links), "
+    "not leave or OTP mail from this app. Set POSTMARK_SERVER_TOKEN or POSTMARK_SMTP_TOKEN plus "
+    "POSTMARK_FROM_EMAIL on the host that runs the API (Render/Railway/backend/.env), then redeploy."
+)
+
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "emails"
 _jinja = (
     Environment(
@@ -50,10 +58,7 @@ def _smtp_config() -> Dict[str, str]:
     # Support both preferred names and legacy aliases used in local env files.
     password = _postmark_server_token()
     if not password:
-        raise RuntimeError(
-            "Missing SMTP password env var. Set POSTMARK_SMTP_TOKEN "
-            "(or POSTMARK_SERVER_TOKEN / POSTMARK_SMTP_SECRET_KEY)."
-        )
+        raise RuntimeError(_MISSING_POSTMARK_ON_API_HOST)
     username = (
         _env("POSTMARK_SMTP_USERNAME")
         or _env("POSTMARK_SMTP_ACCESS_KEY")
@@ -89,9 +94,7 @@ def _send_postmark_rest(
         raise RuntimeError("Install postmarker (see backend/requirements.txt)") from exc
     token = _postmark_server_token()
     if not token:
-        raise RuntimeError(
-            "Missing Postmark token for REST API. Set POSTMARK_SERVER_TOKEN or POSTMARK_SMTP_TOKEN."
-        )
+        raise RuntimeError(_MISSING_POSTMARK_ON_API_HOST)
     timeout_raw = _env("POSTMARK_API_TIMEOUT", "30") or "30"
     try:
         timeout_sec = max(5, min(120, int(timeout_raw)))
