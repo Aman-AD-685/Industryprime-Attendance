@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from services.dashboard_service import get_dashboard_summary
 from dependencies.auth_dependency import get_auth_context
 from database.supabase_client import get_supabase_user, get_supabase
+from services.public_frontend_url import public_base_url_for_email
 
 router = APIRouter()
 
@@ -45,7 +46,7 @@ def attendance_entry_share_url(authorization: Optional[str] = Header(default=Non
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization bearer token")
     get_auth_context(authorization=authorization)
-    base = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    base = public_base_url_for_email(log_context="dashboard_attendance_entry_url")
     secret = os.getenv("ATTENDANCE_ENTRY_SECRET", "").strip()
     path = "/attendance-entry"
     if secret:

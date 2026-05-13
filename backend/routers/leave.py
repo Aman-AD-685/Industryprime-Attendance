@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
@@ -9,7 +8,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Body, HTTPException, Header, Path, Query
 from pydantic import BaseModel, Field
 
-from database.supabase_client import _bootstrap_backend_env, get_supabase_service, get_supabase_user
+from database.supabase_client import get_supabase_service, get_supabase_user
 from dependencies.auth_dependency import get_auth_context
 from services.auth_service import require_role
 from services.decision_token_service import make_decision_token, verify_decision_token
@@ -19,6 +18,7 @@ from services.email_service import (
     render_email_template,
     send_email,
 )
+from services.public_frontend_url import public_base_url_for_email
 from services.leave_balance_attendance_service import calculate_user_leave_balance
 from services.leave_service import (
     create_leave_request,
@@ -32,31 +32,6 @@ from services.leave_service import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-def _frontend_base() -> str:
-    """
-    Public URLs for email buttons. Prefer FRONTEND_URL; never silently fall back to localhost in production.
-    """
-    _bootstrap_backend_env()
-    base = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
-    if base:
-        return base
-    for raw in os.getenv("CORS_ORIGINS", "").split(","):
-        origin = raw.strip().rstrip("/")
-        if not origin:
-            continue
-        low = origin.lower()
-        if "localhost" in low or "127.0.0.1" in low:
-            continue
-        return origin
-    dev = os.getenv("API_ENV", "").strip().lower() in {"", "dev", "development", "local"}
-    if not dev:
-        logger.warning(
-            "FRONTEND_URL is not set; email links will use http://localhost:3000. "
-            "Set FRONTEND_URL on the API host (e.g. https://industryprime-attendance.vercel.app)."
-        )
-    return "http://localhost:3000"
 
 
 def _safe_update_leave_request_decision(
@@ -346,7 +321,7 @@ def _notify_leave_recipients(
         if str(row.get("email") or "").strip():
             planned_sends += 1
 
-    base = _frontend_base()
+    base = public_base_url_for_email(log_context="leave_approval_email")
     try:
         for row in approvals or []:
             to_email = str(row.get("email") or "").strip().lower()
