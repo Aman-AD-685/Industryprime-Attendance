@@ -5,10 +5,14 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import time
 from typing import Any, Dict
 
 from database.supabase_client import _bootstrap_backend_env
+
+# Default 48 hours (enterprise leave-approval window).
+_DEFAULT_DECISION_TOKEN_TTL_SEC = 48 * 3600
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -28,11 +32,18 @@ def _secret() -> str:
     return sec
 
 
-def make_decision_token(*, leave_id: str, email: str, action: str, expires_in_seconds: int = 7 * 24 * 3600) -> str:
+def make_decision_token(
+    *,
+    leave_id: str,
+    email: str,
+    action: str,
+    expires_in_seconds: int = _DEFAULT_DECISION_TOKEN_TTL_SEC,
+) -> str:
     payload = {
         "leave_id": leave_id,
         "email": email.strip().lower(),
         "action": action,
+        "jti": secrets.token_urlsafe(16),
         "exp": int(time.time()) + expires_in_seconds,
     }
     body = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
@@ -55,4 +66,9 @@ def verify_decision_token(token: str) -> Dict[str, Any]:
     action = str(payload.get("action") or "")
     if action not in {"approve", "reject"}:
         raise ValueError("Invalid decision action")
+    # New tokens always include `jti` (single-use). Legacy tokens may omit it.
+    jti = str(payload.get("jti") or "").strip()
+    if jti:
+        payload = dict(payload)
+        payload["jti"] = jti
     return payload

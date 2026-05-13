@@ -6,7 +6,7 @@ import { API_BASE, effectiveApiBase } from "@/lib/envApi";
 export { API_BASE };
 
 /** FastAPI often returns `{ "detail": "..." }` — show plain text in the UI instead of raw JSON. */
-function formatBackendError(body: string): string {
+export function formatBackendError(body: string): string {
   const t = body.trim();
   if (!t) return t;
   try {

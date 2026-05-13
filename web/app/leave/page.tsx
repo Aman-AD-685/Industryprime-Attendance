@@ -15,6 +15,9 @@ type LeaveRequest = {
   not_deducted_days?: number;
   remarks?: string;
   decided_by_email?: string;
+  rejection_remarks?: string;
+  approved_at?: string;
+  rejected_at?: string;
 };
 
 type LeaveSummary = {
@@ -51,6 +54,27 @@ const emptyForm: LeaveForm = {
 
 function formatAllocationYearMonth(y: number, m: number) {
   return new Date(y, m - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
+}
+
+function leaveStatusBadge(status: string) {
+  const s = status.toLowerCase();
+  if (s === "approved")
+    return (
+      <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900 dark:bg-emerald-500/20 dark:text-emerald-200">
+        Approved
+      </span>
+    );
+  if (s === "rejected" || s === "unapproved")
+    return (
+      <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-900 dark:bg-rose-500/20 dark:text-rose-200">
+        Rejected
+      </span>
+    );
+  return (
+    <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
+      Pending
+    </span>
+  );
 }
 
 function LeaveDeductionBadges({ row }: { row: LeaveSummary }) {
@@ -395,15 +419,27 @@ export default function LeavePage() {
               {selected.requests.length === 0 ? (
                 <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-400">No leave requests found.</div>
               ) : (
-                selected.requests.map((request) => (
+                selected.requests.map((request) => {
+                  const rawStatus = (request.status || "pending").toLowerCase();
+                  const displayStatus = rawStatus.replace("unapproved", "rejected");
+                  return (
                   <div key={request.id} className="flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white/70 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
-                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{(request.leave_date_start || "-") + (request.leave_date_end ? ` -> ${request.leave_date_end}` : "")}</div>
-                    <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{request.leave_type || "Leave"} • {(request.status || "pending").replace("unapproved", "rejected")}</div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                        {(request.leave_date_start || "-") + (request.leave_date_end ? ` -> ${request.leave_date_end}` : "")}
+                      </div>
+                      {leaveStatusBadge(displayStatus)}
+                    </div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">{request.leave_type || "Leave"}</div>
                     {request.reason && <div className="text-xs text-zinc-600 dark:text-zinc-300">Reason: {request.reason}</div>}
-                    {request.remarks && <div className="text-xs text-zinc-600 dark:text-zinc-300">Decision Remarks: {request.remarks}</div>}
+                    {request.remarks && <div className="text-xs text-zinc-600 dark:text-zinc-300">Decision note: {request.remarks}</div>}
+                    {request.rejection_remarks && (
+                      <div className="text-xs text-rose-700 dark:text-rose-300">Rejection remarks: {request.rejection_remarks}</div>
+                    )}
                     {request.decided_by_email && <div className="text-xs text-zinc-500 dark:text-zinc-400">Decided by: {request.decided_by_email}</div>}
                   </div>
-                ))
+                );
+                })
               )}
             </div>
           )}

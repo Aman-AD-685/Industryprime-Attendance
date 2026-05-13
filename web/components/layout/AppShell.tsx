@@ -22,6 +22,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
     () =>
       publicRoutes.has(pathname) ||
       pathname.startsWith("/signup/verify") ||
+      pathname.startsWith("/leave/decision") ||
+      pathname.startsWith("/leave/reject") ||
       (pathname.startsWith("/leaves/") && pathname.endsWith("/decide")) ||
       (pathname.startsWith("/leave/requests/") && pathname.endsWith("/decide")),
     [pathname],

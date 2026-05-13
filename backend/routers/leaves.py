@@ -305,6 +305,7 @@ def decide_leave(
         html = render_email_template(
             "leave_decision_result.html",
             {
+                "applicant_name": str(applicant.get("name") or "there"),
                 "status": status_value,
                 "from_date": str(updated_leave.get("from_date") or ""),
                 "to_date": str(updated_leave.get("to_date") or ""),

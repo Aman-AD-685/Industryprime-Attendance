@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 from datetime import date
 from typing import Any, Dict, List, Optional
 
@@ -85,24 +86,47 @@ def list_leave_requests(status: Optional[str] = None) -> List[Dict[str, Any]]:
     return list_leave_requests_for_tenant(status=status, tenant_id=None, supabase=None)
 
 
+def _leave_request_overlaps_month(row: Dict[str, Any], year: int, month: int) -> bool:
+    start_raw = row.get("leave_date_start") or row.get("start_date")
+    end_raw = row.get("leave_date_end") or row.get("end_date") or start_raw
+    if not start_raw:
+        return True
+    try:
+        start = date.fromisoformat(str(start_raw)[:10])
+        end = date.fromisoformat(str(end_raw)[:10]) if end_raw else start
+    except ValueError:
+        return True
+    _, last_day = calendar.monthrange(year, month)
+    first_m = date(year, month, 1)
+    last_m = date(year, month, last_day)
+    return start <= last_m and end >= first_m
+
+
 def list_leave_requests_for_tenant(
     status: Optional[str] = None,
     tenant_id: Optional[str] = None,
     supabase: Optional[SupabaseRest] = None,
+    employee_id: Optional[str] = None,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     if supabase is None:
         supabase = get_supabase()
 
     where_eq: Optional[Dict[str, Any]] = None
-    if status or tenant_id:
+    st = str(status or "").strip().lower()
+    status_for_db: Optional[str] = None
+    if st not in {"", "all"} and st != "rejected":
+        status_for_db = status
+    if tenant_id or status_for_db:
         where_eq = {}
-        if status:
-            where_eq["status"] = status
+        if status_for_db:
+            where_eq["status"] = status_for_db
         if tenant_id:
             where_eq["tenant_id"] = tenant_id
 
     try:
-        return supabase.select(
+        rows = supabase.select(
             table="leave_requests",
             select="*",
             where_eq=where_eq,
@@ -111,6 +135,16 @@ def list_leave_requests_for_tenant(
     except Exception:
         # Phase 2 schema may omit leave_requests; keep UI usable.
         return []
+
+    out = rows or []
+    if st == "rejected":
+        out = [r for r in out if str(r.get("status") or "").lower() in {"rejected", "unapproved"}]
+    eid = str(employee_id or "").strip()
+    if eid:
+        out = [r for r in out if str(r.get("employee_id") or "") == eid]
+    if year is not None and month is not None:
+        out = [r for r in out if _leave_request_overlaps_month(r, year, month)]
+    return out
 
 
 def decide_leave_request(request_id: str, decision: str) -> Dict[str, Any]:

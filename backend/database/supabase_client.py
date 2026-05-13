@@ -202,11 +202,16 @@ class SupabaseRest:
         table: str,
         payload: Dict[str, Any],
         where_eq: Dict[str, Any],
+        *,
+        where_is_null: Optional[List[str]] = None,
     ) -> Optional[Dict[str, Any]]:
         # PATCH supports filtering in query string
         params: Dict[str, Any] = {"select": "*"}
         for k, v in where_eq.items():
             params[k] = f"eq.{v}"
+        for col in where_is_null or []:
+            if col.strip():
+                params[col] = "is.null"
 
         headers = dict(self.headers)
         headers["Prefer"] = "return=representation"

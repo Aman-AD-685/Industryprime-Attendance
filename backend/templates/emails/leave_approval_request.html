@@ -10,9 +10,9 @@
           <p style="margin:0 0 8px;"><strong>Dates:</strong> {{ from_date }} -> {{ to_date }}</p>
           <p style="margin:0 0 6px;"><strong>Reason:</strong></p>
           <pre style="white-space:pre-wrap;margin:0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;">{{ reason }}</pre>
-          <div style="margin-top:18px;display:flex;gap:10px;">
-            <a href="{{ approve_url }}" style="background:#16a34a;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;">Approve</a>
-            <a href="{{ reject_url }}" style="background:#dc2626;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;">Reject</a>
+          <div style="margin-top:18px;display:flex;flex-wrap:wrap;gap:10px;">
+            <a href="{{ approve_url }}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:14px 20px;border-radius:10px;font-weight:700;min-width:140px;text-align:center;">Approve</a>
+            <a href="{{ reject_url }}" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;padding:14px 20px;border-radius:10px;font-weight:700;min-width:140px;text-align:center;">Reject</a>
           </div>
         </div>
       </div>

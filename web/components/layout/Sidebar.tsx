@@ -55,6 +55,12 @@ export default function Sidebar({
         icon: IconUsers,
         roles: ["master_admin"],
       },
+      {
+        label: "Leave oversight",
+        href: "/leave/admin",
+        icon: IconClipboardList,
+        roles: ["master_admin"],
+      },
       { label: "Employees", href: "/employees", icon: IconUsers },
       {
         label: "Attendance",
