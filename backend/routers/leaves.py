@@ -8,13 +8,12 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Header, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
-from database.supabase_client import _bootstrap_backend_env, get_supabase_service
+from database.supabase_client import get_supabase_service
 from dependencies.auth_dependency import get_auth_context
 from services.audit_service import record_audit_event
 from services.decision_token_service import make_decision_token, verify_decision_token
 from services.email_service import render_email_template, send_email
-
-import os
+from services.public_frontend_url import public_base_url_for_email
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -22,12 +21,6 @@ logger = logging.getLogger(__name__)
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _frontend_base() -> str:
-    _bootstrap_backend_env()
-    base = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
-    return base or "http://localhost:3000"
 
 
 class LeaveCreateIn(BaseModel):
@@ -90,6 +83,8 @@ def apply_leave(
     approval_rows = _list_recipients("approval")
     notification_rows = _list_recipients("notification")
 
+    frontend_base = public_base_url_for_email(log_context="leaves_approval_email")
+
     try:
         for r in approval_rows:
             to_email = str(r.get("email") or "").strip().lower()
@@ -119,8 +114,8 @@ def apply_leave(
             )
             approve_q = urlencode({"action": "approve", "token": approve_token})
             reject_q = urlencode({"action": "reject", "token": reject_token})
-            approve_url = f"{_frontend_base()}/leaves/{leave_id}/decide?{approve_q}"
-            reject_url = f"{_frontend_base()}/leaves/{leave_id}/decide?{reject_q}"
+            approve_url = f"{frontend_base}/leaves/{leave_id}/decide?{approve_q}"
+            reject_url = f"{frontend_base}/leaves/{leave_id}/decide?{reject_q}"
             html = render_email_template(
                 "leave_approval_request.html",
                 {
