@@ -10,7 +10,6 @@ PyMuPDF
 Pillow
 # OCR fallback: requires the Tesseract binary on PATH (e.g. apt install tesseract-ocr).
 pytesseract
-postmarker
 jinja2
 bcrypt
 fpdf2

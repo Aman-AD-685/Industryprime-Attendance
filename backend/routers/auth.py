@@ -47,13 +47,18 @@ def _raise_if_signup_infra_error(exc: Exception) -> None:
         "could not find the table" in low and ("pending_signups" in low or "otp_codes" in low)
     ):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_OTP_SCHEMA_HINT) from exc
-    if "postmark is not configured on the fastapi server" in low or "missing smtp password env var" in low:
+    if (
+        "postmark is not configured on the fastapi server" in low
+        or "missing smtp password env var" in low
+        or "email (smtp) is not configured" in low
+    ):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                "Cannot send the signup code: Postmark is not configured on the FastAPI host "
-                "(Supabase Auth → SMTP does not apply). Set POSTMARK_SERVER_TOKEN or POSTMARK_SMTP_TOKEN "
-                "and POSTMARK_FROM_EMAIL where the API runs (e.g. Render env + redeploy), or backend/.env locally."
+                "Cannot send the signup code: SMTP is not configured on the FastAPI host "
+                "(Supabase Auth → SMTP does not apply). Set POSTMARK_SMTP_USERNAME, POSTMARK_SMTP_TOKEN, "
+                "SMTP_FROM_EMAIL (or POSTMARK_FROM_EMAIL) where the API runs (e.g. Render env + redeploy), "
+                "or backend/.env locally."
             ),
         ) from exc
     raise exc

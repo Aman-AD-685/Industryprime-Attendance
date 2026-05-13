@@ -29,6 +29,10 @@ async def lifespan(app: FastAPI):
     PDF_UPLOAD_TMP.mkdir(parents=True, exist_ok=True)
     cleanup_stale_pdf_tempfiles(str(PDF_UPLOAD_TMP))
 
+    from services.email_service import log_email_smtp_startup
+
+    log_email_smtp_startup()
+
     async def hourly_tmp_cleanup():
         while True:
             await asyncio.sleep(3600)

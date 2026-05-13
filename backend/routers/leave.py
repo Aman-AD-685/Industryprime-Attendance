@@ -214,15 +214,14 @@ def _notify_leave_recipients(
             and not postmark_token_configured()
         ):
             summary["delivery_note"] = (
-                "No emails were delivered: Postmark is not set on the API server (the Next.js host is separate). "
-                "Add POSTMARK_SERVER_TOKEN and POSTMARK_FROM_EMAIL where FastAPI runs (e.g. Render), redeploy, "
-                "or set EMAIL_MODE=log to log-only. Check API logs for intended recipients."
+                "No emails were delivered: Postmark SMTP credentials missing on the API server. "
+                "Set POSTMARK_SMTP_USERNAME, POSTMARK_SMTP_TOKEN, POSTMARK_SMTP_HOST, POSTMARK_SMTP_PORT, "
+                "and SMTP_FROM_EMAIL where FastAPI runs (e.g. Render), redeploy, or set EMAIL_MODE=log."
             )
     except Exception as exc:
         summary["error"] = f"send_failed: {exc}"
         logger.error(
-            "Leave saved but notification email failed — set POSTMARK_* on the **API** host (not Vercel); "
-            "use a live Postmark server token (sandbox does not inbox); verify POSTMARK_FROM_EMAIL sender: %s",
+            "Leave saved but notification email failed — check POSTMARK_SMTP_* and SMTP_FROM_EMAIL on the API host: %s",
             exc,
             exc_info=True,
         )

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import smtplib
 import time
 from pathlib import Path
@@ -21,18 +20,15 @@ from database.supabase_client import _bootstrap_backend_env
 
 logger = logging.getLogger(__name__)
 
-# Shown when POSTMARK_* are unset on the Python process (Supabase Dashboard SMTP is unrelated).
-# Exported for signup/OTP paths that must fail closed if mail cannot be sent.
+# Signup/OTP paths raise this if SMTP cannot send (kept export name for existing imports).
 MISSING_POSTMARK_ON_API_HOST_MESSAGE = (
-    "Postmark is not configured on the FastAPI server (this is separate from Supabase). "
-    "Supabase Dashboard → Authentication → Email/SMTP only affects Supabase Auth emails (e.g. magic links), "
-    "not leave or OTP mail from this app. Set POSTMARK_SERVER_TOKEN (or POSTMARK_SMTP_TOKEN / POSTMARK_Access_Key) "
-    "plus POSTMARK_FROM_EMAIL or SMTP_FROM_EMAIL on the host that runs the API (Render/Railway/backend/.env), "
-    "then redeploy. Use POSTMARK_DELIVERY=api on Render (SMTP port 587 is often blocked). "
-    "Or set EMAIL_MODE=log to log only (no Postmark required)."
+    "Email (SMTP) is not configured on the FastAPI host. Set POSTMARK_SMTP_HOST (default smtp.postmarkapp.com), "
+    "POSTMARK_SMTP_PORT (587), POSTMARK_SMTP_USERNAME, POSTMARK_SMTP_TOKEN (Postmark Server API token used as SMTP "
+    "password; username is often the same token or your PM-T-… value from Postmark), and SMTP_FROM_EMAIL or "
+    "POSTMARK_FROM_EMAIL on Render or backend/.env, then redeploy."
 )
 
-_MISSING_POSTMARK_ON_API_HOST = MISSING_POSTMARK_ON_API_HOST_MESSAGE
+_MISSING_SMTP_CONFIG = MISSING_POSTMARK_ON_API_HOST_MESSAGE
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "emails"
 _jinja = (
@@ -50,15 +46,43 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
 
+def _normalize_smtp_secret(raw: str) -> str:
+    t = (raw or "").strip()
+    if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'":
+        t = t[1:-1].strip()
+    return t
+
+
+def _smtp_password() -> str:
+    return _normalize_smtp_secret(
+        _env("POSTMARK_SMTP_TOKEN")
+        or _env("POSTMARK_SMTP_SECRET_KEY")
+        or _env("POSTMARK_SMTP_Secret_key")
+    )
+
+
+def _smtp_username() -> str:
+    u = _normalize_smtp_secret(_env("POSTMARK_SMTP_USERNAME"))
+    if u:
+        return u
+    # Postmark SMTP: many setups use the server token as both username and password.
+    return _smtp_password()
+
+
+def smtp_credentials_configured() -> bool:
+    """True when POSTMARK_SMTP_TOKEN (and derived username) are set for outbound SMTP."""
+    return bool(_smtp_password())
+
+
 def postmark_token_configured() -> bool:
-    """True if a Postmark server/SMTP token is present (required for real delivery when EMAIL_MODE=postmark)."""
-    return bool(_postmark_server_token())
+    """Backward-compatible alias: means SMTP credentials are present."""
+    return smtp_credentials_configured()
 
 
 def email_delivery_mode() -> str:
     """
-    postmark — real delivery via Postmark (requires POSTMARK_SERVER_TOKEN / SMTP token + FROM).
-    log — no outbound mail; send_email logs intended recipients (use on API host until Postmark is set).
+    postmark — send via Postmark SMTP (POSTMARK_SMTP_*).
+    log — no outbound mail; log intended recipients only.
     """
     m = _env("EMAIL_MODE", "postmark").lower()
     if m in ("log", "console", "local", "disabled", "dry_run", "dry-run"):
@@ -66,97 +90,31 @@ def email_delivery_mode() -> str:
     return "postmark"
 
 
-def _normalize_postmark_server_token(raw: str) -> str:
-    """Strip whitespace and common copy-paste wrappers (Render/JSON quotes)."""
-    t = (raw or "").strip()
-    if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'":
-        t = t[1:-1].strip()
-    return t
-
-
-# Postmark "Server API token" in the dashboard is a UUID with hyphens.
-_POSTMARK_SERVER_API_TOKEN_UUID = re.compile(
-    r"^[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}$"
-)
-
-
-def _looks_like_postmark_server_api_token(s: str) -> bool:
-    return bool(s and _POSTMARK_SERVER_API_TOKEN_UUID.match(s.strip()))
-
-
-_POSTMARK_TOKEN_ENV_KEYS = (
-    "POSTMARK_SERVER_TOKEN",
-    "POSTMARK_SMTP_TOKEN",
-    "POSTMARK_SMTP_SECRET_KEY",
-    "POSTMARK_SMTP_Secret_key",
-    # Render / dashboards sometimes use these names (must still be the **Server** API token UUID from Postmark):
-    "POSTMARK_Access_Key",
-    "POSTMARK_ACCESS_KEY",
-)
-
-
-def _postmark_server_token() -> str:
-    """
-    Postmark REST + SMTP password use the **Server API token** (UUID from Postmark → Servers → API Tokens).
-
-    If POSTMARK_SERVER_TOKEN is set on Render to a wrong/truncated value (common: 0 vs O typo when retyping),
-    we still try other env vars and prefer any value that matches the UUID shape.
-    """
-    entries: list[tuple[str, str]] = []
-    for key in _POSTMARK_TOKEN_ENV_KEYS:
-        v = _normalize_postmark_server_token(_env(key))
-        if v:
-            entries.append((key, v))
-
-    if not entries:
-        return ""
-
-    for key, v in entries:
-        if _looks_like_postmark_server_api_token(v):
-            if key != entries[0][0]:
-                logger.warning(
-                    "Postmark: using %s for API (value in %s is not a valid Server API token UUID shape; "
-                    "copy the UUID from Postmark exactly, or remove the bad variable on Render).",
-                    key,
-                    entries[0][0],
-                )
-            return v
-
-    # No UUID-shaped candidate — use first non-empty (may still fail Postmark error 10).
-    return entries[0][1]
-
-
-def _postmark_from_email() -> str:
+def _from_email() -> str:
     return (
-        _env("POSTMARK_FROM_EMAIL")
-        or _env("SMTP_FROM_EMAIL")
+        _env("SMTP_FROM_EMAIL")
+        or _env("POSTMARK_FROM_EMAIL")
         or _env("FROM_EMAIL")
         or "aman@industryprime.com"
     )
 
 
-def _postmark_message_stream() -> str:
+def _message_stream() -> str:
     return (
-        _env("POSTMARK_MESSAGE_STREAM")
-        or _env("SMTP_POSTMARK_STREAM")
+        _env("SMTP_POSTMARK_STREAM")
+        or _env("POSTMARK_MESSAGE_STREAM")
         or _env("POSTMARK_STREAM")
         or "outbound"
     )
 
 
 def _smtp_config() -> Dict[str, str]:
-    # Support both preferred names and legacy aliases used in local env files.
-    password = _postmark_server_token()
+    password = _smtp_password()
     if not password:
-        raise RuntimeError(_MISSING_POSTMARK_ON_API_HOST)
-    username = (
-        _env("POSTMARK_SMTP_USERNAME")
-        or _env("POSTMARK_SMTP_ACCESS_KEY")
-        or _env("POSTMARK_SMTP_Access_Key")
-        or _env("POSTMARK_Access_Key")
-        or _env("POSTMARK_ACCESS_KEY")
-        or password
-    )
+        raise RuntimeError(_MISSING_SMTP_CONFIG)
+    username = _smtp_username()
+    if not username:
+        raise RuntimeError(_MISSING_SMTP_CONFIG)
     return {
         "host": _env("POSTMARK_SMTP_HOST", "smtp.postmarkapp.com"),
         "port": _env("POSTMARK_SMTP_PORT", "587") or "587",
@@ -165,72 +123,23 @@ def _smtp_config() -> Dict[str, str]:
     }
 
 
-def _send_postmark_rest(
-    *,
-    recipients: list[str],
-    subject: str,
-    html: str,
-    text: Optional[str],
-    sender: str,
-    stream: str,
-) -> None:
-    """
-    HTTPS delivery to Postmark (api.postmarkapp.com). Prefer this in production when
-    outbound SMTP (port 587) is blocked; uses the same server token as SMTP.
-    Sends one API call per recipient (Postmark-recommended for tracking and fewer rejections).
-    """
-    try:
-        from postmarker.core import PostmarkClient
-        from postmarker.exceptions import ClientError
-    except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("Install postmarker (see backend/requirements.txt)") from exc
-    token = _postmark_server_token()
-    if not token:
-        raise RuntimeError(_MISSING_POSTMARK_ON_API_HOST)
-    timeout_raw = _env("POSTMARK_API_TIMEOUT", "30") or "30"
-    try:
-        timeout_sec = max(5, min(120, int(timeout_raw)))
-    except ValueError:
-        timeout_sec = 30
-    client = PostmarkClient(server_token=token, timeout=timeout_sec)
-    text_body = text or "This email requires an HTML-capable client."
-    for addr in recipients:
-        kwargs: Dict[str, Any] = {
-            "From": sender,
-            "To": addr,
-            "Subject": subject,
-            "HtmlBody": html,
-            "TextBody": text_body,
-        }
-        if stream:
-            kwargs["MessageStream"] = stream
-        try:
-            resp = client.emails.send(**kwargs)
-        except ClientError as exc:
-            code = getattr(exc, "error_code", None)
-            msg = str(exc)
-            logger.error("Postmark API rejected email to=%s code=%s: %s", addr, code, msg)
-            low = msg.lower()
-            if code == 10 or "valid server token" in low:
-                raise RuntimeError(
-                    "Postmark error 10: invalid Server API token. Copy the **Server API token** (UUID with hyphens) "
-                    "from Postmark → Servers → your server → API Tokens. Common mistakes: (1) letter **O** typed as "
-                    "digit **0** when pasting into Render; (2) **POSTMARK_SERVER_TOKEN** set wrong while "
-                    "**POSTMARK_SMTP_TOKEN** in .env is correct — delete or fix SERVER_TOKEN on Render, or paste the "
-                    "same UUID into POSTMARK_SERVER_TOKEN. Do not use Account API tokens."
-                ) from exc
-            raise RuntimeError(
-                f"Postmark API error (verify From address is a sender on this server; live token for real inboxes): {msg}"
-            ) from exc
-        mid = None
-        if isinstance(resp, dict):
-            mid = resp.get("MessageID") or resp.get("MessageId")
-        logger.info("Postmark REST email sent to=%s MessageID=%s stream=%s", addr, mid, stream or "default")
+def log_email_smtp_startup() -> None:
+    """Log SMTP mode and whether credentials exist (never log secrets)."""
+    mode = email_delivery_mode()
+    host = _env("POSTMARK_SMTP_HOST", "smtp.postmarkapp.com")
+    port = _env("POSTMARK_SMTP_PORT", "587") or "587"
+    creds = smtp_credentials_configured()
+    logger.info(
+        "Email delivery: mode=%s SMTP host=%s port=%s credentials_loaded=%s",
+        mode,
+        host,
+        port,
+        creds,
+    )
 
 
 def render_email_template(template_name: str, context: Dict[str, Any]) -> str:
     if _jinja is None:
-        # Fallback keeps backend running when jinja2 is not installed yet.
         return (
             f"<html><body><h3>IndustryPrime</h3><p>Template: {template_name}</p>"
             f"<pre>{context}</pre><p>Sent by IndustryPrime · aman@industryprime.com</p></body></html>"
@@ -243,7 +152,6 @@ def render_email_template(template_name: str, context: Dict[str, Any]) -> str:
 
 
 def _test_redirect_address() -> str:
-    """If set, all recipients are replaced with this address (Postmark must still be configured)."""
     raw = _env("EMAIL_TEST_REDIRECT", "")
     if not raw or "@" not in raw:
         return ""
@@ -255,18 +163,10 @@ def send_email(
     subject: str,
     html: str,
     text: Optional[str] = None,
-    *,
-    force_postmark_api: bool = False,
 ) -> bool:
     """
-    Send one message. Returns True if the message was accepted for delivery (Postmark API/SMTP success)
-    or EMAIL_MODE=log (logged only, treated as success for workflows that allow dry-run).
-
-    Returns False when EMAIL_MODE=postmark but no Postmark token is configured: logs intended recipients
-    and does not raise (use for leave notifications). Signup/OTP should check the return value and raise.
-
-    force_postmark_api: when True, send only via Postmark HTTPS (never SMTP). Used by Settings → test email
-    so Render env POSTMARK_DELIVERY=smtp cannot hang on blocked port 587.
+    Send via Postmark SMTP only (TLS on port 587). Returns True on success or EMAIL_MODE=log.
+    Returns False when credentials are missing (leave flow); raises on SMTP errors.
     """
     recipients: list[str]
     if isinstance(to, str):
@@ -286,11 +186,10 @@ def send_email(
         )
         return True
 
-    if not postmark_token_configured():
+    if not smtp_credentials_configured():
         preview = (html or "")[:800].replace("\n", " ")
         logger.warning(
-            "Postmark token not set on API host; skipping outbound email (Supabase Auth SMTP does not apply). "
-            "subject=%r to=%s",
+            "SMTP credentials not set (POSTMARK_SMTP_TOKEN required); skipping send subject=%r to=%s",
             subject,
             recipients,
         )
@@ -312,59 +211,8 @@ def send_email(
         else:
             text = f"[Test redirect — intended recipients: {orig_txt}]"
 
-    sender = _postmark_from_email()
-    stream = _postmark_message_stream()
-
-    if force_postmark_api:
-        _send_postmark_rest(
-            recipients=recipients,
-            subject=subject,
-            html=html,
-            text=text,
-            sender=sender,
-            stream=stream,
-        )
-        logger.info(
-            "Postmark REST (forced for test email) subject=%s to=%s stream=%s",
-            subject,
-            recipients,
-            stream,
-        )
-        return True
-
-    # Default api: Postmark HTTPS (Render/Fly often block outbound SMTP 587 — avoids "timed out").
-    # auto: same as api (no REST→SMTP fallback; use legacy only if you need that behavior).
-    # smtp: SMTP only. legacy: try REST then SMTP on failure.
-    mode = _env("POSTMARK_DELIVERY", "api").lower()
-    if mode not in ("api", "rest", "http", "auto", "smtp", "legacy"):
-        mode = "api"
-
-    if mode in ("api", "rest", "http", "auto"):
-        _send_postmark_rest(
-            recipients=recipients,
-            subject=subject,
-            html=html,
-            text=text,
-            sender=sender,
-            stream=stream,
-        )
-        logger.info("Postmark REST email sent subject=%s to=%s stream=%s", subject, recipients, stream)
-        return True
-
-    if mode == "legacy":
-        try:
-            _send_postmark_rest(
-                recipients=recipients,
-                subject=subject,
-                html=html,
-                text=text,
-                sender=sender,
-                stream=stream,
-            )
-            logger.info("Postmark REST email sent subject=%s to=%s stream=%s", subject, recipients, stream)
-            return True
-        except Exception as exc:
-            logger.warning("Postmark REST send failed, falling back to SMTP (POSTMARK_DELIVERY=legacy): %s", exc)
+    sender = _from_email()
+    stream = _message_stream()
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -379,13 +227,13 @@ def send_email(
     for i in range(attempts):
         try:
             conf = _smtp_config()
-            with smtplib.SMTP(conf["host"], int(conf["port"]), timeout=20) as smtp:
+            with smtplib.SMTP(conf["host"], int(conf["port"]), timeout=30) as smtp:
                 smtp.ehlo()
                 smtp.starttls()
                 smtp.ehlo()
                 smtp.login(conf["username"], conf["password"])
                 smtp.send_message(msg)
-            logger.info("Postmark SMTP email sent subject=%s to=%s stream=%s", subject, recipients, stream)
+            logger.info("SMTP email sent subject=%s to=%s stream=%s", subject, recipients, stream)
             return True
         except Exception as exc:
             last_exc = exc
@@ -396,12 +244,11 @@ def send_email(
                 continue
             if "timeout" in exc_text:
                 raise RuntimeError(
-                    "Postmark SMTP connection timed out (common on Render when port 587 is blocked). "
-                    "Set POSTMARK_DELIVERY=api (default) or remove POSTMARK_DELIVERY=smtp from the API host env, "
-                    "then redeploy."
+                    "SMTP connection timed out connecting to Postmark (smtp.postmarkapp.com:587). "
+                    "Some cloud hosts block outbound SMTP; verify Render allows egress on 587 or use a host that does."
                 ) from exc
             raise
 
     if last_exc:
         raise last_exc
-    raise RuntimeError("Postmark SMTP send did not complete")  # pragma: no cover
+    raise RuntimeError("SMTP send did not complete")  # pragma: no cover

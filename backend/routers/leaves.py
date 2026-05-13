@@ -169,7 +169,7 @@ def apply_leave(
                 )
     except Exception as exc:
         logger.error(
-            "Leave saved but email/token notify failed — POSTMARK_* on API host; live token + verified From: %s",
+            "Leave saved but email/token notify failed — check POSTMARK_SMTP_* and SMTP_FROM_EMAIL on API host: %s",
             exc,
             exc_info=True,
         )

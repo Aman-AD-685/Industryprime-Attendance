@@ -184,15 +184,14 @@ def send_test_email(
             subject="IndustryPrime email delivery test",
             html=html,
             text="IndustryPrime email test: delivery successful (or EMAIL_MODE=log — see API logs).",
-            force_postmark_api=True,
         )
     except Exception as exc:
         detail = str(exc)
         low = detail.lower()
         if "timed out" in low or "timeout" in low:
             detail += (
-                " — On Render, outbound SMTP (port 587) is often blocked; use POSTMARK_DELIVERY=api "
-                "(default in newer builds) on the API service and redeploy."
+                " — Confirm Render allows outbound TCP to smtp.postmarkapp.com:587, or try from a network "
+                "where SMTP is not blocked."
             )
         raise HTTPException(status_code=400, detail=f"Test email failed: {detail}") from exc
     if not ok:
