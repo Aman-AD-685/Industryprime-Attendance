@@ -1,13 +1,29 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+
+function LegacyRedirectFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center px-4 text-sm text-zinc-500">
+      Loading…
+    </div>
+  );
+}
 
 /**
  * Legacy email links used `/leave/requests/{id}/decide`.
  * Redirect to the production-safe routes `/leave/decision` and `/leave/reject`.
  */
 export default function LegacyLeaveDecideRedirect() {
+  return (
+    <Suspense fallback={<LegacyRedirectFallback />}>
+      <LegacyLeaveDecideRedirectInner />
+    </Suspense>
+  );
+}
+
+function LegacyLeaveDecideRedirectInner() {
   const params = useParams<{ id: string }>();
   const search = useSearchParams();
 

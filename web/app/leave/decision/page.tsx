@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { API_BASE, formatBackendError } from "@/lib/api";
 
@@ -23,7 +23,23 @@ function apiUrl(path: string) {
   return `${base}${p}`;
 }
 
+function DecisionPageFallback() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">
+      <p className="text-sm text-zinc-600 dark:text-zinc-300">Loading…</p>
+    </div>
+  );
+}
+
 export default function LeaveDecisionPage() {
+  return (
+    <Suspense fallback={<DecisionPageFallback />}>
+      <LeaveDecisionContent />
+    </Suspense>
+  );
+}
+
+function LeaveDecisionContent() {
   const search = useSearchParams();
   const leaveId = useMemo(() => (search.get("leave_id") || "").trim(), [search]);
   const token = useMemo(() => (search.get("token") || "").trim(), [search]);
