@@ -12,6 +12,8 @@ def test_send_email_log_mode_skips_postmark(monkeypatch: pytest.MonkeyPatch, cap
         "POSTMARK_SMTP_TOKEN",
         "POSTMARK_SMTP_SECRET_KEY",
         "POSTMARK_SMTP_Secret_key",
+        "POSTMARK_Access_Key",
+        "POSTMARK_ACCESS_KEY",
     ):
         monkeypatch.delenv(k, raising=False)
     caplog.set_level("INFO")
@@ -24,6 +26,11 @@ def test_send_email_log_mode_skips_postmark(monkeypatch: pytest.MonkeyPatch, cap
     assert email_service.email_delivery_mode() == "log"
     assert any("EMAIL_MODE=log" in r.message for r in caplog.records)
     assert any("approver@example.com" in r.message for r in caplog.records)
+
+
+def test_postmark_server_token_strips_quotes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POSTMARK_SERVER_TOKEN", '"  abc-uuid-token  "')
+    assert email_service._postmark_server_token() == "abc-uuid-token"
 
 
 def test_postmark_token_accepts_access_key_alias(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,6 +81,8 @@ def test_send_email_without_postmark_token_returns_false(
         "POSTMARK_SMTP_TOKEN",
         "POSTMARK_SMTP_SECRET_KEY",
         "POSTMARK_SMTP_Secret_key",
+        "POSTMARK_Access_Key",
+        "POSTMARK_ACCESS_KEY",
     ):
         monkeypatch.delenv(k, raising=False)
     caplog.set_level("WARNING")
