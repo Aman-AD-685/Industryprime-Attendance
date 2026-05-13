@@ -65,17 +65,29 @@ def email_delivery_mode() -> str:
     return "postmark"
 
 
+def _normalize_postmark_server_token(raw: str) -> str:
+    """Strip whitespace and common copy-paste wrappers (Render/JSON quotes)."""
+    t = (raw or "").strip()
+    if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'":
+        t = t[1:-1].strip()
+    return t
+
+
 def _postmark_server_token() -> str:
-    """Postmark Server API token (same value used for SMTP password on most accounts)."""
-    return (
-        _env("POSTMARK_SERVER_TOKEN")
-        or _env("POSTMARK_SMTP_TOKEN")
-        or _env("POSTMARK_SMTP_SECRET_KEY")
-        or _env("POSTMARK_SMTP_Secret_key")
-        # Render / dashboards sometimes use these names:
-        or _env("POSTMARK_Access_Key")
-        or _env("POSTMARK_ACCESS_KEY")
-    )
+    """Postmark Server API token (same value used as SMTP password for that server)."""
+    for key in (
+        "POSTMARK_SERVER_TOKEN",
+        "POSTMARK_SMTP_TOKEN",
+        "POSTMARK_SMTP_SECRET_KEY",
+        "POSTMARK_SMTP_Secret_key",
+        # Render / dashboards sometimes use these names (must still be the **Server** API token UUID from Postmark):
+        "POSTMARK_Access_Key",
+        "POSTMARK_ACCESS_KEY",
+    ):
+        v = _normalize_postmark_server_token(_env(key))
+        if v:
+            return v
+    return ""
 
 
 def _postmark_from_email() -> str:
@@ -162,8 +174,17 @@ def _send_postmark_rest(
             code = getattr(exc, "error_code", None)
             msg = str(exc)
             logger.error("Postmark API rejected email to=%s code=%s: %s", addr, code, msg)
+            low = msg.lower()
+            if code == 10 or "valid server token" in low:
+                raise RuntimeError(
+                    "Postmark error 10: the value in POSTMARK_SERVER_TOKEN (or POSTMARK_SMTP_TOKEN / "
+                    "POSTMARK_Access_Key) is not a valid **Server API token**. In Postmark: Servers → "
+                    "your server → API Tokens → copy **Server API token** (UUID). Do not use the Account API token, "
+                    "webhook signing secret, or a token from a different server. On Render, paste it with no quotes "
+                    "or spaces, save, and redeploy the API service."
+                ) from exc
             raise RuntimeError(
-                f"Postmark API error (check From/sender domain and server token; sandbox tokens do not deliver to real inboxes): {msg}"
+                f"Postmark API error (verify From address is a sender on this server; live token for real inboxes): {msg}"
             ) from exc
         mid = None
         if isinstance(resp, dict):
