@@ -190,8 +190,8 @@ def send_test_email(
         low = detail.lower()
         if "timed out" in low or "timeout" in low:
             detail += (
-                " — Confirm Render allows outbound TCP to smtp.postmarkapp.com:587, or try from a network "
-                "where SMTP is not blocked."
+                " — On Render, try POSTMARK_SMTP_PORT=2525 (many blocks on 587). The app also retries 2525 after 587 "
+                "by default. If both fail, outbound SMTP may be blocked — check Render networking or support."
             )
         raise HTTPException(status_code=400, detail=f"Test email failed: {detail}") from exc
     if not ok:
