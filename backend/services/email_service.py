@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import smtplib
 import time
 from pathlib import Path
@@ -73,21 +74,56 @@ def _normalize_postmark_server_token(raw: str) -> str:
     return t
 
 
+# Postmark "Server API token" in the dashboard is a UUID with hyphens.
+_POSTMARK_SERVER_API_TOKEN_UUID = re.compile(
+    r"^[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}$"
+)
+
+
+def _looks_like_postmark_server_api_token(s: str) -> bool:
+    return bool(s and _POSTMARK_SERVER_API_TOKEN_UUID.match(s.strip()))
+
+
+_POSTMARK_TOKEN_ENV_KEYS = (
+    "POSTMARK_SERVER_TOKEN",
+    "POSTMARK_SMTP_TOKEN",
+    "POSTMARK_SMTP_SECRET_KEY",
+    "POSTMARK_SMTP_Secret_key",
+    # Render / dashboards sometimes use these names (must still be the **Server** API token UUID from Postmark):
+    "POSTMARK_Access_Key",
+    "POSTMARK_ACCESS_KEY",
+)
+
+
 def _postmark_server_token() -> str:
-    """Postmark Server API token (same value used as SMTP password for that server)."""
-    for key in (
-        "POSTMARK_SERVER_TOKEN",
-        "POSTMARK_SMTP_TOKEN",
-        "POSTMARK_SMTP_SECRET_KEY",
-        "POSTMARK_SMTP_Secret_key",
-        # Render / dashboards sometimes use these names (must still be the **Server** API token UUID from Postmark):
-        "POSTMARK_Access_Key",
-        "POSTMARK_ACCESS_KEY",
-    ):
+    """
+    Postmark REST + SMTP password use the **Server API token** (UUID from Postmark → Servers → API Tokens).
+
+    If POSTMARK_SERVER_TOKEN is set on Render to a wrong/truncated value (common: 0 vs O typo when retyping),
+    we still try other env vars and prefer any value that matches the UUID shape.
+    """
+    entries: list[tuple[str, str]] = []
+    for key in _POSTMARK_TOKEN_ENV_KEYS:
         v = _normalize_postmark_server_token(_env(key))
         if v:
+            entries.append((key, v))
+
+    if not entries:
+        return ""
+
+    for key, v in entries:
+        if _looks_like_postmark_server_api_token(v):
+            if key != entries[0][0]:
+                logger.warning(
+                    "Postmark: using %s for API (value in %s is not a valid Server API token UUID shape; "
+                    "copy the UUID from Postmark exactly, or remove the bad variable on Render).",
+                    key,
+                    entries[0][0],
+                )
             return v
-    return ""
+
+    # No UUID-shaped candidate — use first non-empty (may still fail Postmark error 10).
+    return entries[0][1]
 
 
 def _postmark_from_email() -> str:
@@ -177,11 +213,11 @@ def _send_postmark_rest(
             low = msg.lower()
             if code == 10 or "valid server token" in low:
                 raise RuntimeError(
-                    "Postmark error 10: the value in POSTMARK_SERVER_TOKEN (or POSTMARK_SMTP_TOKEN / "
-                    "POSTMARK_Access_Key) is not a valid **Server API token**. In Postmark: Servers → "
-                    "your server → API Tokens → copy **Server API token** (UUID). Do not use the Account API token, "
-                    "webhook signing secret, or a token from a different server. On Render, paste it with no quotes "
-                    "or spaces, save, and redeploy the API service."
+                    "Postmark error 10: invalid Server API token. Copy the **Server API token** (UUID with hyphens) "
+                    "from Postmark → Servers → your server → API Tokens. Common mistakes: (1) letter **O** typed as "
+                    "digit **0** when pasting into Render; (2) **POSTMARK_SERVER_TOKEN** set wrong while "
+                    "**POSTMARK_SMTP_TOKEN** in .env is correct — delete or fix SERVER_TOKEN on Render, or paste the "
+                    "same UUID into POSTMARK_SERVER_TOKEN. Do not use Account API tokens."
                 ) from exc
             raise RuntimeError(
                 f"Postmark API error (verify From address is a sender on this server; live token for real inboxes): {msg}"

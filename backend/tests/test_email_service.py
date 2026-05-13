@@ -33,6 +33,26 @@ def test_postmark_server_token_strips_quotes(monkeypatch: pytest.MonkeyPatch) ->
     assert email_service._postmark_server_token() == "abc-uuid-token"
 
 
+def test_postmark_server_token_prefers_uuid_when_server_token_is_garbage(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Render often has a mistyped POSTMARK_SERVER_TOKEN while POSTMARK_SMTP_TOKEN matches Postmark."""
+    good = "11111111-1111-4111-8111-111111111111"
+    monkeypatch.setenv("POSTMARK_SERVER_TOKEN", "0ZRwZgzTypoNotAUuid")
+    monkeypatch.setenv("POSTMARK_SMTP_TOKEN", good)
+    caplog.set_level("WARNING")
+    assert email_service._postmark_server_token() == good
+    assert any("using POSTMARK_SMTP_TOKEN" in r.message for r in caplog.records)
+
+
+def test_postmark_server_token_uses_server_when_uuid(monkeypatch: pytest.MonkeyPatch) -> None:
+    u1 = "11111111-1111-4111-8111-111111111111"
+    u2 = "22222222-2222-4222-8222-222222222222"
+    monkeypatch.setenv("POSTMARK_SERVER_TOKEN", u1)
+    monkeypatch.setenv("POSTMARK_SMTP_TOKEN", u2)
+    assert email_service._postmark_server_token() == u1
+
+
 def test_postmark_token_accepts_access_key_alias(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("POSTMARK_SERVER_TOKEN", raising=False)
     monkeypatch.delenv("POSTMARK_SMTP_TOKEN", raising=False)
