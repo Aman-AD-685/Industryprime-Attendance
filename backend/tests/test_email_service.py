@@ -79,6 +79,18 @@ def test_send_email_uses_smtp_when_configured(monkeypatch: pytest.MonkeyPatch) -
     mock_smtp.send_message.assert_called_once()
 
 
+def test_smtp_ports_default_includes_2525_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POSTMARK_SMTP_PORT", "587")
+    monkeypatch.delenv("POSTMARK_SMTP_NO_PORT_FALLBACK", raising=False)
+    assert email_service._smtp_ports_to_try() == [587, 2525]
+
+
+def test_smtp_ports_no_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POSTMARK_SMTP_PORT", "587")
+    monkeypatch.setenv("POSTMARK_SMTP_NO_PORT_FALLBACK", "1")
+    assert email_service._smtp_ports_to_try() == [587]
+
+
 def test_log_email_smtp_startup_logs_mode(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     monkeypatch.setenv("EMAIL_MODE", "postmark")
     monkeypatch.setenv("POSTMARK_SMTP_TOKEN", "x")

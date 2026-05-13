@@ -123,17 +123,36 @@ def _smtp_config() -> Dict[str, str]:
     }
 
 
+def _smtp_ports_to_try() -> list[int]:
+    """
+    Primary port from POSTMARK_SMTP_PORT (default 587). If primary is 587 and fallback is enabled, also try 2525 —
+    many hosts block 587 while Postmark still accepts STARTTLS on 2525.
+    Set POSTMARK_SMTP_NO_PORT_FALLBACK=1 to only use the configured port.
+    """
+    raw = (_env("POSTMARK_SMTP_PORT", "587") or "587").strip()
+    try:
+        primary = int(raw)
+    except ValueError:
+        primary = 587
+    out = [primary]
+    if _env("POSTMARK_SMTP_NO_PORT_FALLBACK", "").lower() in ("1", "true", "yes"):
+        return out
+    if primary == 587 and 2525 not in out:
+        out.append(2525)
+    return out
+
+
 def log_email_smtp_startup() -> None:
     """Log SMTP mode and whether credentials exist (never log secrets)."""
     mode = email_delivery_mode()
     host = _env("POSTMARK_SMTP_HOST", "smtp.postmarkapp.com")
-    port = _env("POSTMARK_SMTP_PORT", "587") or "587"
+    ports = _smtp_ports_to_try()
     creds = smtp_credentials_configured()
     logger.info(
-        "Email delivery: mode=%s SMTP host=%s port=%s credentials_loaded=%s",
+        "Email delivery: mode=%s SMTP host=%s ports_to_try=%s credentials_loaded=%s",
         mode,
         host,
-        port,
+        ports,
         creds,
     )
 
@@ -165,7 +184,7 @@ def send_email(
     text: Optional[str] = None,
 ) -> bool:
     """
-    Send via Postmark SMTP only (TLS on port 587). Returns True on success or EMAIL_MODE=log.
+    Send via Postmark SMTP only (STARTTLS). Returns True on success or EMAIL_MODE=log.
     Returns False when credentials are missing (leave flow); raises on SMTP errors.
     """
     recipients: list[str]
@@ -223,32 +242,51 @@ def send_email(
     msg.add_alternative(html, subtype="html")
 
     attempts = 2
+    conf = _smtp_config()
+    host = conf["host"]
+    user = conf["username"]
+    password = conf["password"]
+    ports = _smtp_ports_to_try()
     last_exc: Optional[Exception] = None
-    for i in range(attempts):
-        try:
-            conf = _smtp_config()
-            with smtplib.SMTP(conf["host"], int(conf["port"]), timeout=30) as smtp:
-                smtp.ehlo()
-                smtp.starttls()
-                smtp.ehlo()
-                smtp.login(conf["username"], conf["password"])
-                smtp.send_message(msg)
-            logger.info("SMTP email sent subject=%s to=%s stream=%s", subject, recipients, stream)
-            return True
-        except Exception as exc:
-            last_exc = exc
-            exc_text = str(exc).lower()
-            transient = "timeout" in exc_text or "temporar" in exc_text or "try again" in exc_text
-            if i < attempts - 1 and transient:
-                time.sleep(0.6)
-                continue
-            if "timeout" in exc_text:
-                raise RuntimeError(
-                    "SMTP connection timed out connecting to Postmark (smtp.postmarkapp.com:587). "
-                    "Some cloud hosts block outbound SMTP; verify Render allows egress on 587 or use a host that does."
-                ) from exc
-            raise
 
-    if last_exc:
+    for port in ports:
+        for i in range(attempts):
+            try:
+                with smtplib.SMTP(host, port, timeout=45) as smtp:
+                    smtp.ehlo()
+                    smtp.starttls()
+                    smtp.ehlo()
+                    smtp.login(user, password)
+                    smtp.send_message(msg)
+                logger.info(
+                    "SMTP email sent subject=%s to=%s stream=%s host=%s port=%s",
+                    subject,
+                    recipients,
+                    stream,
+                    host,
+                    port,
+                )
+                return True
+            except Exception as exc:
+                last_exc = exc
+                exc_text = str(exc).lower()
+                transient = "timeout" in exc_text or "temporar" in exc_text or "try again" in exc_text
+                if i < attempts - 1 and transient:
+                    time.sleep(0.6)
+                    continue
+                break
+        if last_exc is not None and port != ports[-1]:
+            logger.warning("SMTP failed on host=%s port=%s: %s; trying next port", host, port, last_exc)
+
+    if last_exc is not None:
+        exc_text = str(last_exc).lower()
+        if "timeout" in exc_text:
+            raise RuntimeError(
+                f"SMTP timed out to Postmark ({host}), tried ports {ports}. "
+                "On Render, set POSTMARK_SMTP_PORT=2525 on the API service and redeploy (many networks block 587). "
+                "Or leave fallback enabled (do not set POSTMARK_SMTP_NO_PORT_FALLBACK=1) so the app tries 2525 after 587. "
+                "If every port times out, outbound SMTP may be blocked entirely — open a Render support ticket or use a host that allows SMTP."
+            ) from last_exc
         raise last_exc
+
     raise RuntimeError("SMTP send did not complete")  # pragma: no cover
