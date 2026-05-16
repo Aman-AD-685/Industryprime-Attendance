@@ -54,12 +54,6 @@ export default function Sidebar({ isOpen, onClose, onDismiss }: SidebarProps) {
     () => [
       { label: "Dashboard", href: "/dashboard", icon: IconGrid },
       {
-        label: "Admin overview",
-        href: "/dashboard/admin",
-        icon: IconSparkles,
-        roles: ["master_admin", "admin"],
-      },
-      {
         label: "Users",
         href: "/users",
         icon: IconUsers,

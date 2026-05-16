@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -23,7 +24,12 @@ function sameOriginAttendanceEntryUrl(apiUrl: string): string {
   return apiUrl;
 }
 
-export default function AddAttendanceHeaderLink() {
+type AddAttendanceHeaderLinkProps = {
+  /** Solid green button (matches former dashboard header strip). */
+  variant?: "default" | "solid";
+};
+
+export default function AddAttendanceHeaderLink({ variant = "default" }: AddAttendanceHeaderLinkProps) {
   const [manualHref, setManualHref] = useState("/attendance-entry?from=app");
   const [open, setOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -65,13 +71,19 @@ export default function AddAttendanceHeaderLink() {
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          "inline-flex shrink-0 items-center rounded-2xl border border-emerald-300 bg-white px-2 py-1.5 text-xs font-semibold text-emerald-800 shadow-sm transition sm:px-3 sm:py-2 sm:text-sm",
-          "hover:border-emerald-400 hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-100 dark:hover:bg-emerald-900/50",
+          "inline-flex shrink-0 items-center rounded-2xl px-2 py-1.5 text-xs font-semibold shadow-sm transition sm:px-3 sm:py-2 sm:text-sm",
+          variant === "solid"
+            ? "gap-1 border border-emerald-600 bg-[#10B981] text-white hover:bg-emerald-600 dark:border-emerald-500 dark:hover:bg-emerald-500"
+            : cn(
+                "border border-emerald-300 bg-white text-emerald-800",
+                "hover:border-emerald-400 hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-100 dark:hover:bg-emerald-900/50",
+              ),
         )}
       >
+        {variant === "solid" ? <Plus className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden /> : null}
         <span className="sm:hidden">Add</span>
         <span className="hidden sm:inline">Add Attendance</span>{" "}
-        <span className="ml-0.5 opacity-70 sm:ml-1">▾</span>
+        <span className={cn("ml-0.5 opacity-70 sm:ml-1", variant === "solid" && "text-white/90")}>▾</span>
       </button>
 
       {open ? (

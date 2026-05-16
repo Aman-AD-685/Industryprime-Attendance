@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
-import { DashboardHeaderStrip } from "@/components/admin/DashboardHeaderStrip";
 import { useDashboardAdminNav } from "@/components/dashboard/DashboardAdminNavContext";
 import AddAttendanceHeaderLink from "./AddAttendanceHeaderLink";
 import NotificationBell from "./NotificationBell";
@@ -85,12 +84,10 @@ export default function Header({ isSidebarOpen, onToggleSidebar }: HeaderProps) 
         </div>
 
         <div className="flex w-full flex-wrap items-center justify-end gap-x-2 sm:gap-x-3 md:w-auto md:flex-nowrap md:justify-self-end md:gap-x-4 md:pl-4 lg:pl-8">
-          {showDashActions && dashRole ? (
+          {(showDashActions && dashRole) || showAddAttendance ? (
             <div className="flex flex-wrap items-center justify-end gap-2 md:ml-2 lg:ml-4">
-              <DashboardHeaderStrip role={dashRole} />
+              <AddAttendanceHeaderLink variant={showDashActions && dashRole ? "solid" : "default"} />
             </div>
-          ) : showAddAttendance ? (
-            <AddAttendanceHeaderLink />
           ) : null}
           <NotificationBell />
           <ThemeToggle />
