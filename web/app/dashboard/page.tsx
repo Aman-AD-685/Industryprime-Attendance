@@ -119,7 +119,7 @@ export default function DashboardPage() {
         </div>
 
         <section className="min-w-0 scroll-mt-6 space-y-3">
-          <ManagementCards isMasterAdmin={isMaster} forMainDashboard />
+          <ManagementCards isMasterAdmin={isMaster} />
         </section>
 
         {can.seeAuditLog(user.role) ? (

@@ -5,7 +5,7 @@ import { Lock } from "lucide-react";
 
 import { Tooltip } from "@/components/ui/dashboard-ui";
 
-export function ManagementCards({ isMasterAdmin, forMainDashboard }: { isMasterAdmin: boolean; forMainDashboard?: boolean }) {
+export function ManagementCards({ isMasterAdmin }: { isMasterAdmin: boolean }) {
   type Card = {
     title: string;
     chip: string;
@@ -15,31 +15,27 @@ export function ManagementCards({ isMasterAdmin, forMainDashboard }: { isMasterA
     masterOnly?: boolean;
   };
 
-  const attendanceHref = forMainDashboard ? "/attendance" : "/dashboard/admin/attendance";
-  const employeesHref = forMainDashboard ? "/employees" : "/dashboard/admin/employees";
-  const rolesHref = forMainDashboard ? "/dashboard/roles" : "/dashboard/admin/roles";
-
   const cards: Card[] = [
     {
       title: "Attendance",
       chip: "Admin & Master Admin",
       chipClass: "bg-[#F7FAF9] text-[#7A8784]",
       desc: "Upload and review attendance reports.",
-      href: attendanceHref,
+      href: "/attendance",
     },
     {
       title: "Employee Management",
       chip: "Admin & Master Admin",
       chipClass: "bg-[#F7FAF9] text-[#7A8784]",
       desc: "Manage employee records and directory data.",
-      href: employeesHref,
+      href: "/employees",
     },
     {
       title: "User & Role Control",
       chip: isMasterAdmin ? "Master Admin only" : "Master Admin only",
       chipClass: isMasterAdmin ? "bg-emerald-50 text-emerald-800" : "bg-[#F1F5F4] text-[#7A8784]",
       desc: "Manage users and role assignments.",
-      href: rolesHref,
+      href: "/dashboard/roles",
       masterOnly: true,
     },
   ];
