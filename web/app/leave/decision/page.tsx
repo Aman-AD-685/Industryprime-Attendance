@@ -86,13 +86,17 @@ function LeaveDecisionContent() {
 
   async function onApprove(event: React.FormEvent) {
     event.preventDefault();
+    if (!remarks.trim()) {
+      setError("Remarks are required to approve this leave request.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const res = await fetch(apiUrl("/leave/approve"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, remarks: remarks.trim() || null }),
+        body: JSON.stringify({ token, remarks: remarks.trim() }),
       });
       const text = await res.text();
       if (!res.ok) throw new Error(formatBackendError(text) || "Failed to approve");
@@ -190,12 +194,13 @@ function LeaveDecisionContent() {
 
         <form onSubmit={onApprove} className="mt-6 space-y-4">
           <label className="block text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-            Optional note to the employee
+            Why approve? (required)
             <textarea
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              rows={3}
-              placeholder="e.g. Enjoy your time off"
+              rows={5}
+              required
+              placeholder="Briefly explain why this leave is approved"
               className="mt-1 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
             />
           </label>
