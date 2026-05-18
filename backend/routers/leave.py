@@ -207,7 +207,9 @@ def _process_leave_email_decision(
 
     decided_by_email = str(payload.get("email") or "").strip()
     if action == "approve":
-        general = (remarks or "").strip() or "Approved via email link."
+        general = (remarks or "").strip()
+        if not general:
+            raise HTTPException(status_code=400, detail="Approval remarks are required.")
         rejection_remarks = ""
         status_value = "approved"
     else:
@@ -440,7 +442,7 @@ class LeaveEmailDecisionBody(BaseModel):
 
 class LeaveEmailApproveBody(BaseModel):
     token: str = Field(..., min_length=20)
-    remarks: Optional[str] = Field(default=None, max_length=2000)
+    remarks: str = Field(..., min_length=1, max_length=2000)
 
 
 class LeaveEmailRejectBody(BaseModel):
