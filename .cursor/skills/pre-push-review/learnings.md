@@ -18,8 +18,10 @@ Updated by the agent after each review. Do not contradict **Accepted** patterns.
 
 ## Performance notes
 
-- `/dashboard` mounts multiple `useQuery` hooks with **30s refetchInterval** — increases network churn; consider raising staleTime or gating refetch when tab hidden.
-- `AppShell` calls **`getCurrentUser()`** on load — adds one API round-trip before any page.
+- `/dashboard` uses **cached session** + **120s staleTime** on admin queries; heavy charts are **dynamic imports**.
+- `AppShell` shows UI from **localStorage** immediately; `/auth/me` revalidates in background (5 min session TTL).
+- Login audit runs in **BackgroundTasks** (non-blocking).
+- `apiFetch` has **12s timeout**; auth `/me` uses **8s**.
 - Dashboard widgets mix **mock store** (`dashboardMockStore`) with real `/dashboard/summary` — verify production uses real data paths.
 
 ## Security notes

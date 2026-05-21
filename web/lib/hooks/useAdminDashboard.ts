@@ -25,12 +25,17 @@ export const adminDashboardKeys = {
   audit: (limit: number) => [...adminDashboardKeys.all, "audit", limit] as const,
 };
 
+const dashboardQueryDefaults = {
+  staleTime: 120_000,
+  gcTime: 10 * 60_000,
+  refetchOnWindowFocus: false,
+} as const;
+
 export function useKpis() {
   return useQuery({
     queryKey: adminDashboardKeys.kpis(),
     queryFn: getKpis,
-    refetchInterval: 30_000,
-    staleTime: 10_000,
+    ...dashboardQueryDefaults,
   });
 }
 
@@ -38,8 +43,7 @@ export function useTrend(range: "14d" | "30d") {
   return useQuery({
     queryKey: adminDashboardKeys.trend(range),
     queryFn: () => getTrend(range),
-    refetchInterval: 30_000,
-    staleTime: 10_000,
+    ...dashboardQueryDefaults,
   });
 }
 
@@ -47,8 +51,7 @@ export function useDepartments() {
   return useQuery({
     queryKey: adminDashboardKeys.departments(),
     queryFn: getDepartments,
-    refetchInterval: 30_000,
-    staleTime: 30_000,
+    ...dashboardQueryDefaults,
   });
 }
 
@@ -56,8 +59,7 @@ export function useLateArrivals(filter: string | null) {
   return useQuery({
     queryKey: adminDashboardKeys.late(filter),
     queryFn: () => getLateArrivals(filter ?? undefined),
-    refetchInterval: 30_000,
-    staleTime: 5_000,
+    ...dashboardQueryDefaults,
   });
 }
 
@@ -65,8 +67,7 @@ export function usePendingLeaves() {
   return useQuery({
     queryKey: adminDashboardKeys.leaves(),
     queryFn: getPendingLeaves,
-    refetchInterval: 30_000,
-    staleTime: 5_000,
+    ...dashboardQueryDefaults,
   });
 }
 
@@ -74,8 +75,7 @@ export function useAudit(limit = 20) {
   return useQuery({
     queryKey: adminDashboardKeys.audit(limit),
     queryFn: () => getAudit(limit),
-    refetchInterval: 30_000,
-    staleTime: 30_000,
+    ...dashboardQueryDefaults,
   });
 }
 

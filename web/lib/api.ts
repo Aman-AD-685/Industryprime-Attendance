@@ -1,6 +1,7 @@
 "use client";
 
 import { getStoredToken } from "@/lib/auth";
+import { DEFAULT_API_TIMEOUT_MS, fetchWithTimeout } from "@/lib/apiFetchWithTimeout";
 import { API_BASE, effectiveApiBase } from "@/lib/envApi";
 import { userFacingApiDetail } from "@/lib/userFacingError";
 
@@ -58,16 +59,24 @@ export async function apiFetch<T = any>(
   const url = `${base}${p}`;
   let res: Response;
   try {
-    res = await fetch(url, {
-      ...init,
-      headers,
-    });
+    res = await fetchWithTimeout(
+      url,
+      {
+        ...init,
+        headers,
+      },
+      DEFAULT_API_TIMEOUT_MS,
+    );
   } catch (e) {
+    const aborted =
+      (e instanceof DOMException && e.name === "AbortError") ||
+      (typeof e === "object" && e !== null && (e as { name?: string }).name === "AbortError");
     const hint =
       " Check that FastAPI is running and `next.config.ts` rewrites `/api` → your API (or set NEXT_PUBLIC_API_URL to match this page’s origin). " +
       `Tried base: ${raw}. Try: cd backend && uvicorn main:app --reload`;
     const base = e instanceof Error ? e.message : "Failed to fetch";
-    const full = process.env.NODE_ENV === "production" ? base : `${base}.${hint}`;
+    const msg = aborted ? `Request timed out after ${DEFAULT_API_TIMEOUT_MS / 1000}s.` : base;
+    const full = process.env.NODE_ENV === "production" ? msg : `${msg}.${hint}`;
     throw new Error(userFacingApiDetail(full));
   }
   if (!res.ok) {

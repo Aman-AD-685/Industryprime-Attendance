@@ -1,23 +1,50 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AdminSidebar } from "@/components/admin/Sidebar";
 import { DashboardAuditLog } from "@/components/admin/DashboardAuditLog";
 import { DashboardDepartmentSection } from "@/components/admin/DashboardDepartmentSection";
-import { DashboardLateArrivalsTable } from "@/components/admin/DashboardLateArrivalsTable";
-import { DashboardPendingLeaves } from "@/components/admin/DashboardPendingLeaves";
-import { DashboardTrendChart } from "@/components/admin/DashboardTrendChart";
 import { KpiStrip } from "@/components/admin/KpiStrip";
+import { Skeleton } from "@/components/ui/dashboard-ui";
+
+const DashboardTrendChart = dynamic(
+  () => import("@/components/admin/DashboardTrendChart").then((m) => ({ default: m.DashboardTrendChart })),
+  { loading: () => <SectionSkeleton tall />, ssr: false },
+);
+
+const DashboardLateArrivalsTable = dynamic(
+  () =>
+    import("@/components/admin/DashboardLateArrivalsTable").then((m) => ({
+      default: m.DashboardLateArrivalsTable,
+    })),
+  { loading: () => <SectionSkeleton />, ssr: false },
+);
+
+const DashboardPendingLeaves = dynamic(
+  () => import("@/components/admin/DashboardPendingLeaves").then((m) => ({ default: m.DashboardPendingLeaves })),
+  { loading: () => <SectionSkeleton />, ssr: false },
+);
+
+function SectionSkeleton({ tall }: { tall?: boolean }) {
+  return (
+    <div className="rounded-2xl border border-[#E5EAE8] bg-white p-6 shadow-sm lg:col-span-7">
+      <Skeleton className="h-4 w-40" />
+      <Skeleton className={tall ? "mt-6 h-64 w-full" : "mt-6 h-48 w-full"} />
+    </div>
+  );
+}
 import { ManagementCards } from "@/components/admin/ManagementCards";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { useDashboardAdminNav } from "@/components/dashboard/DashboardAdminNavContext";
 import { canShowAddAttendanceHeader } from "@/lib/navAccess";
 import { can } from "@/lib/permissions";
-import { useKpis, usePendingLeaves } from "@/lib/hooks/useAdminDashboard";
+import { usePendingLeaves } from "@/lib/hooks/useAdminDashboard";
 import { useSession } from "@/lib/hooks/useSession";
 import type { AuthUser } from "@/lib/auth";
+import { getStoredUser } from "@/lib/auth";
 
 const roleLabels: Record<AuthUser["role"], string> = {
   master_admin: "Master Admin",
@@ -32,7 +59,6 @@ export default function DashboardPage() {
   const [trendRange, setTrendRange] = useState<"14d" | "30d">("14d");
   const dashNav = useDashboardAdminNav();
 
-  const kpisQ = useKpis();
   const pendingQ = usePendingLeaves();
 
   useEffect(() => {
@@ -41,9 +67,9 @@ export default function DashboardPage() {
     }
   }, [router, user?.role]);
 
-  const showAddAttendanceInCopy = canShowAddAttendanceHeader(user?.email);
-
-  if (!user) {
+  const displayUser = user ?? getStoredUser();
+  const showAddAttendanceInCopy = canShowAddAttendanceHeader(displayUser?.email);
+  if (!displayUser) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-sm text-[#7A8784]">
         Loading your workspace…
@@ -51,16 +77,16 @@ export default function DashboardPage() {
     );
   }
 
-  if (user.role === "user") {
+  if (displayUser.role === "user") {
     return null;
   }
 
-  const isMaster = user.role === "master_admin";
+  const isMaster = displayUser.role === "master_admin";
 
   return (
     <div className="flex min-h-[calc(100vh-4rem)] w-full min-w-0 overflow-x-hidden bg-[#F7FAF9] pb-36 text-[#0F1F1B] md:pb-28">
       <AdminSidebar
-        role={user.role}
+        role={displayUser.role}
         pendingLeaveCount={pendingQ.data?.length ?? 0}
         mobileOpen={dashNav?.adminNavOpen ?? false}
         onMobileOpenChange={(open) => dashNav?.setAdminNavOpen(open)}
@@ -76,7 +102,7 @@ export default function DashboardPage() {
                 IndustryPrime-Attendance Dashboard
               </h1>
               <p className="mt-2 max-w-2xl text-sm text-[#7A8784] dark:text-zinc-400">
-                Welcome {user?.name || "team member"}. Your role controls which modules and actions are available.
+                Welcome {displayUser.name || "team member"}. Your role controls which modules and actions are available.
                 {showAddAttendanceInCopy ? (
                   <>
                     {" "}
@@ -90,21 +116,12 @@ export default function DashboardPage() {
               </p>
             </div>
             <div className="shrink-0 self-start rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200 lg:self-center">
-              {roleLabels[user.role]}
+              {roleLabels[displayUser.role]}
             </div>
           </div>
         </section>
 
-        {kpisQ.isError ? (
-          <div className="rounded-2xl border border-[#E04F4F]/40 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
-            <strong className="font-semibold">Could not load KPIs.</strong> {kpisQ.error.message}
-            <button type="button" className="ml-2 font-semibold text-[#10B981] underline" onClick={() => void kpisQ.refetch()}>
-              Retry
-            </button>
-          </div>
-        ) : null}
-
-        <PageHeader role={user.role} />
+        <PageHeader role={displayUser.role} />
 
         <KpiStrip />
 
@@ -115,14 +132,14 @@ export default function DashboardPage() {
 
         <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
           <DashboardLateArrivalsTable deptFilter={deptFilter} onClearDeptFilter={() => setDeptFilter(null)} />
-          <DashboardPendingLeaves role={user.role} />
+          <DashboardPendingLeaves role={displayUser.role} />
         </div>
 
         <section className="min-w-0 scroll-mt-6 space-y-3">
           <ManagementCards isMasterAdmin={isMaster} />
         </section>
 
-        {can.seeAuditLog(user.role) ? (
+        {can.seeAuditLog(displayUser.role) ? (
           <section className="min-w-0 scroll-mt-6">
             <DashboardAuditLog />
           </section>

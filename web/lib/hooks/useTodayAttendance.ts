@@ -28,8 +28,7 @@ export function useMeDashboard() {
   const q = useQuery({
     queryKey: ["me-dashboard"],
     queryFn: async () => mergeDashboardWithOverlay(await fetchMeDashboard()),
-    refetchInterval: 30_000,
-    staleTime: 10_000,
+    staleTime: 120_000,
   });
 
   const saveNote = useMutation({

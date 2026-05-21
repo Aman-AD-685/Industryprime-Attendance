@@ -29,9 +29,14 @@ type SignupStartResponse = {
 const TOKEN_KEY = "industryprime.authToken";
 const USER_KEY = "industryprime.authUser";
 const COOKIE_NAME = "industryprime_token";
+const SESSION_CHECKED_AT_KEY = "industryprime.sessionCheckedAt";
 
 /** Abort hung API calls so refresh never spins forever (esp. offline / wrong NEXT_PUBLIC_API_URL). */
 const AUTH_FETCH_TIMEOUT_MS = 18_000;
+/** Session probe — fail fast so shell can render from cache quickly. */
+const SESSION_FETCH_TIMEOUT_MS = 8_000;
+/** Skip /auth/me when cache was validated recently (ms). */
+const SESSION_TTL_MS = 5 * 60 * 1000;
 
 function readCookieRaw(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -53,14 +58,41 @@ function clearCookie(name: string) {
   document.cookie = `${name}=; path=/; max-age=0; samesite=lax`;
 }
 
+function authFetchTimeoutMs(path: string): number {
+  if (path === "/auth/me") return SESSION_FETCH_TIMEOUT_MS;
+  return AUTH_FETCH_TIMEOUT_MS;
+}
+
+export function isSessionFresh(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(SESSION_CHECKED_AT_KEY);
+    if (!raw) return false;
+    const t = Number(raw);
+    return Number.isFinite(t) && Date.now() - t < SESSION_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+export function markSessionFresh(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SESSION_CHECKED_AT_KEY, String(Date.now()));
+  } catch {
+    /* ignore */
+  }
+}
+
 async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
   const base = effectiveApiBase().replace(/\/$/, "");
   const p = path.startsWith("/") ? path : `/${path}`;
   let res: Response;
   const controller = new AbortController();
+  const timeoutMs = authFetchTimeoutMs(p);
   const timeoutId =
     typeof window !== "undefined"
-      ? window.setTimeout(() => controller.abort(), AUTH_FETCH_TIMEOUT_MS)
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
       : 0;
 
   try {
@@ -81,7 +113,7 @@ async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
     throw new Error(
       userFacingApiDetail(
         aborted
-          ? `Auth request timed out after ${AUTH_FETCH_TIMEOUT_MS / 1000}s (base ${base}). Is FastAPI running?`
+          ? `Auth request timed out after ${timeoutMs / 1000}s (base ${base}). Is FastAPI running?`
           : `Cannot reach FastAPI (base ${base}). Check NEXT_PUBLIC_API_URL / API proxy, backend status, and CORS.`,
       ),
     );
@@ -167,6 +199,7 @@ export function getStoredUser(): AuthUser | null {
 export function storeAuth(token: string, user: AuthUser) {
   window.localStorage.setItem(TOKEN_KEY, token);
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  markSessionFresh();
   setCookie(COOKIE_NAME, token, 60 * 60 * 8);
   window.dispatchEvent(new Event("industryprime-auth-change"));
 }
@@ -174,6 +207,7 @@ export function storeAuth(token: string, user: AuthUser) {
 export function clearAuth() {
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
+  window.localStorage.removeItem(SESSION_CHECKED_AT_KEY);
   clearCookie(COOKIE_NAME);
   window.dispatchEvent(new Event("industryprime-auth-change"));
 }
@@ -253,9 +287,13 @@ export async function forgotPassword(email: string): Promise<string> {
   return data.message;
 }
 
-export async function getCurrentUser(): Promise<AuthUser> {
+export async function getCurrentUser(options?: { force?: boolean }): Promise<AuthUser> {
   const token = getStoredToken();
   if (!token) throw new Error("Not authenticated");
+  const cached = getStoredUser();
+  if (!options?.force && cached && isSessionFresh()) {
+    return cached;
+  }
   const data = await authRequest<{ user: AuthUser }>("/auth/me", {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
@@ -264,7 +302,18 @@ export async function getCurrentUser(): Promise<AuthUser> {
     throw new Error("Session response was missing user data.");
   }
   window.localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+  markSessionFresh();
   return data.user;
+}
+
+/** Use cached user when possible; revalidate /auth/me in background. */
+export async function revalidateSessionUser(): Promise<AuthUser | null> {
+  if (!getStoredToken()) return null;
+  try {
+    return await getCurrentUser({ force: true });
+  } catch {
+    return null;
+  }
 }
 
 export async function listUsers(): Promise<AuthUser[]> {

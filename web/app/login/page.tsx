@@ -33,9 +33,8 @@ export default function LoginPage() {
     setError(null);
     setInfo(null);
     try {
-      await login(emailTrim, password);
-      router.replace(getStoredUser()?.role === "user" ? "/dashboard/user" : "/dashboard");
-      router.refresh();
+      const signedIn = await login(emailTrim, password);
+      router.replace(signedIn.role === "user" ? "/dashboard/user" : "/dashboard");
     } catch (err) {
       setError(errorMessageForUser(err, "Sign-in did not complete. Please try again."));
     } finally {

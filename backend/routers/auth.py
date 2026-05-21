@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Header, HTTPException, Path, status
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Path, status
 from pydantic import BaseModel, Field
 
 from database.supabase_client import get_supabase_service
@@ -233,11 +233,12 @@ def signup(payload: SignupRequest):
 
 
 @router.post("/login", response_model=Dict[str, Any])
-def login(payload: LoginRequest):
+def login(payload: LoginRequest, background_tasks: BackgroundTasks):
     try:
         user = authenticate_user(payload.email, payload.password)
         public = public_user(user)
-        record_audit_event(
+        background_tasks.add_task(
+            record_audit_event,
             get_supabase_service(),
             actor_email=public.get("email"),
             action="login_verified",

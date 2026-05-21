@@ -8,7 +8,13 @@ import { DashboardAdminNavProvider } from "@/components/dashboard/DashboardAdmin
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import { cn } from "@/lib/cn";
-import { clearAuth, getCurrentUser, getStoredToken, type AuthUser } from "@/lib/auth";
+import {
+  clearAuth,
+  getStoredToken,
+  getStoredUser,
+  revalidateSessionUser,
+  type AuthUser,
+} from "@/lib/auth";
 
 const publicRoutes = new Set(["/login", "/signup", "/attendance-entry", "/attendance-upload"]);
 const redirectAuthedPublicRoutes = new Set(["/login", "/signup"]);
@@ -45,8 +51,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [loadingSession, setLoadingSession] = useState(true);
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(() =>
+    typeof window === "undefined" ? null : getStoredUser(),
+  );
+  /** Block shell only when there is a token but no cached profile yet. */
+  const [loadingSession, setLoadingSession] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const token = getStoredToken();
+    if (!token) return false;
+    return !getStoredUser();
+  });
   const prevPathRef = useRef<string | null>(null);
 
   const isPublicRoute = useMemo(
@@ -68,29 +82,41 @@ export default function AppShell({ children }: { children: ReactNode }) {
     let mounted = true;
 
     async function verifySession() {
-      setLoadingSession(true);
-      try {
-        if (!getStoredToken()) {
-          if (mounted) setUser(null);
-          return;
+      const token = getStoredToken();
+      if (!token) {
+        if (mounted) {
+          setUser(null);
+          setLoadingSession(false);
         }
-        const currentUser = await getCurrentUser();
-        if (mounted) setUser(currentUser);
-      } catch {
-        clearAuth();
-        if (mounted) setUser(null);
-      } finally {
-        if (mounted) setLoadingSession(false);
+        return;
       }
+
+      const cached = getStoredUser();
+      if (cached && mounted) {
+        setUser(cached);
+        setLoadingSession(false);
+      } else if (mounted) {
+        setLoadingSession(true);
+      }
+
+      const fresh = await revalidateSessionUser();
+      if (!mounted) return;
+      if (fresh) {
+        setUser(fresh);
+      } else if (!cached) {
+        clearAuth();
+        setUser(null);
+      }
+      setLoadingSession(false);
     }
 
     void verifySession();
-    window.addEventListener("industryprime-auth-change", verifySession);
+    const onAuthChange = () => void verifySession();
+    window.addEventListener("industryprime-auth-change", onAuthChange);
     return () => {
       mounted = false;
-      window.removeEventListener("industryprime-auth-change", verifySession);
+      window.removeEventListener("industryprime-auth-change", onAuthChange);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: stable session probe
   }, []);
 
   useEffect(() => {
