@@ -11,6 +11,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from middleware.rate_limit import RateLimitMiddleware
+
 # Always load env from this package's folder (`backend/.env`), not the shell CWD.
 # Running `uvicorn main:app` from the repo root would otherwise miss `SUPABASE_URL`.
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -91,6 +93,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Outermost: rate limit runs first on incoming requests.
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(attendance.router, prefix="/attendance", tags=["attendance"])
 app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])

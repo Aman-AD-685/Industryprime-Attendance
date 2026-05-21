@@ -1,0 +1,16 @@
+---
+description: Run pre-push-review skill before git commit, push, or deploy. Blocks on critical security/quality issues; uses Compound Engineering code review.
+alwaysApply: false
+---
+
+# Pre-push gate
+
+When the user asks to **commit**, **push**, **deploy**, or **go live**:
+
+1. Read and follow `.cursor/skills/pre-push-review/SKILL.md`
+2. Run **ce-code-review** with `mode:report-only` on the current diff unless user already approved a full review
+3. Output the Go-Live Readiness report and verdict (**✅ Production Push Safe** or **❌ Push Blocked**)
+4. Do **not** run `git push` until verdict is safe or user explicitly overrides after seeing critical issues
+5. After push to `publish-main`, remind: merge into **`main`** for Vercel production
+
+For "why is it slow" questions, use the Performance analyzer section in the pre-push skill.
