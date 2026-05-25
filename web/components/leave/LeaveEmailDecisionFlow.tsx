@@ -181,7 +181,7 @@ export function LeaveEmailDecisionFlow({ mode }: { mode: Mode }) {
         <Card shake={shake} className="text-center">
           <XCircle className="mx-auto h-12 w-12 text-rose-600" aria-hidden />
           <h1 className="mt-4 text-lg font-semibold text-rose-800 dark:text-rose-200">
-            {phase === "invalid" ? "Invalid link" : "Something went wrong"}
+            {phase === "invalid" ? "Invalid link" : "Could not reach the server"}
           </h1>
           <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{message}</p>
           <p className="mt-4 text-xs text-zinc-500">Use the latest Approve or Reject link from your email.</p>

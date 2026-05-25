@@ -9,6 +9,7 @@ Updated by the agent after each review. Do not contradict **Accepted** patterns.
 - Leave email **approve** requires **remarks** (`Why approve? (required)`); backend `LeaveEmailApproveBody.remarks` min_length=1.
 - Email approve/reject: **`web/proxy.ts`** must whitelist `/leave/decision`, `/leave/reject` (and legacy `/leaves/*/decide`) via `isLeaveEmailPublicPath` — cookie gate previously forced login.
 - Local dev: `/api` proxy uses **`http://127.0.0.1:8000`** in `NODE_ENV=development` even if `NEXT_PUBLIC_API_URL` is production.
+- Production leave email pages: use **`leaveEmailDecisionApiBase()`** (direct Render URL), not `/api` proxy — avoids Vercel serverless timeout → `signal is aborted without reason` on cold start.
 - Production frontend deploys from GitHub **`main`**; merge `publish-main` → `main` after feature pushes.
 - OTP send rate limit exists in `otp_service.py`; global API rate limit via `RateLimitMiddleware`.
 
