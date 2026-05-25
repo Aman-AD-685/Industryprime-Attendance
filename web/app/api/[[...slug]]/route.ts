@@ -20,6 +20,10 @@ function backendBase(): string {
   if (explicit && isAbsoluteHttpUrl(explicit)) {
     return trimTrailingPathSeparators(explicit);
   }
+  /** Local `npm run dev` should hit local uvicorn even when NEXT_PUBLIC_API_URL points at production. */
+  if (process.env.NODE_ENV === "development") {
+    return "http://127.0.0.1:8000";
+  }
   const pub = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (pub && isAbsoluteHttpUrl(pub)) return trimTrailingPathSeparators(pub);
   return "http://127.0.0.1:8000";

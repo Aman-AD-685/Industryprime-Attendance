@@ -22,3 +22,54 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes leave-decision-pop {
+  0% {
+    transform: scale(0.88);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes leave-decision-check-pop {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes leave-decision-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
+.leave-decision-success-pop {
+  animation: leave-decision-pop 0.45s ease-out forwards;
+}
+
+.leave-decision-check-pop {
+  animation: leave-decision-check-pop 0.55s ease-out forwards;
+}
+
+.leave-decision-shake {
+  animation: leave-decision-shake 0.35s ease-in-out;
+}

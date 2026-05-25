@@ -15,6 +15,7 @@ import {
   revalidateSessionUser,
   type AuthUser,
 } from "@/lib/auth";
+import { isLeaveEmailPublicPath } from "@/lib/leaveEmailPublicPaths";
 
 const publicRoutes = new Set(["/login", "/signup", "/attendance-entry", "/attendance-upload"]);
 const redirectAuthedPublicRoutes = new Set(["/login", "/signup"]);
@@ -64,21 +65,21 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const prevPathRef = useRef<string | null>(null);
 
   const isPublicRoute = useMemo(
-    () =>
-      publicRoutes.has(pathname) ||
-      pathname.startsWith("/signup/verify") ||
-      pathname.startsWith("/leave/decision") ||
-      pathname.startsWith("/leave/reject") ||
-      (pathname.startsWith("/leaves/") && pathname.endsWith("/decide")) ||
-      (pathname.startsWith("/leave/requests/") && pathname.endsWith("/decide")),
+    () => publicRoutes.has(pathname) || pathname.startsWith("/signup/verify") || isLeaveEmailPublicPath(pathname),
     [pathname],
   );
+  const isLeaveEmailRoute = useMemo(() => isLeaveEmailPublicPath(pathname), [pathname]);
   const redirectIfAuthedPublic = useMemo(
     () => redirectAuthedPublicRoutes.has(pathname),
     [pathname],
   );
 
   useEffect(() => {
+    if (isPublicRoute) {
+      setLoadingSession(false);
+      return;
+    }
+
     let mounted = true;
 
     async function verifySession() {
@@ -117,7 +118,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       mounted = false;
       window.removeEventListener("industryprime-auth-change", onAuthChange);
     };
-  }, []);
+  }, [isPublicRoute]);
 
   useEffect(() => {
     if (loadingSession) return;
@@ -190,7 +191,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   if (isPublicRoute) {
     return (
       <>
-        <InstallAppPrompt />
+        {!isLeaveEmailRoute ? <InstallAppPrompt /> : null}
         {children}
       </>
     );

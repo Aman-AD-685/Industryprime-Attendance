@@ -7,6 +7,8 @@ Updated by the agent after each review. Do not contradict **Accepted** patterns.
 - Dashboard header uses **`AddAttendanceHeaderLink`** (dropdown: Enter Atten. + Upload PDF), not `DashboardHeaderStrip` / `AddAttendanceDialog`.
 - **Admin overview** (`/dashboard/admin`) removed; management cards link to `/attendance`, `/employees`, `/dashboard/roles`.
 - Leave email **approve** requires **remarks** (`Why approve? (required)`); backend `LeaveEmailApproveBody.remarks` min_length=1.
+- Email approve/reject: **`web/proxy.ts`** must whitelist `/leave/decision`, `/leave/reject` (and legacy `/leaves/*/decide`) via `isLeaveEmailPublicPath` — cookie gate previously forced login.
+- Local dev: `/api` proxy uses **`http://127.0.0.1:8000`** in `NODE_ENV=development` even if `NEXT_PUBLIC_API_URL` is production.
 - Production frontend deploys from GitHub **`main`**; merge `publish-main` → `main` after feature pushes.
 - OTP send rate limit exists in `otp_service.py`; global API rate limit via `RateLimitMiddleware`.
 

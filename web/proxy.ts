@@ -1,10 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isLeaveEmailPublicPath } from "@/lib/leaveEmailPublicPaths";
+
 const AUTH_COOKIE = "industryprime_token";
 /** Paths reachable without a session cookie (includes public attendance entry). */
 const publicUnauthenticatedRoutes = new Set(["/login", "/signup", "/attendance-entry", "/attendance-upload"]);
 /** Logged-in users are redirected away from these (not from `/attendance-entry`). */
 const redirectIfAuthedRoutes = new Set(["/login", "/signup"]);
+
+function isPublicUnauthenticatedPath(pathname: string): boolean {
+  if (publicUnauthenticatedRoutes.has(pathname)) return true;
+  if (pathname.startsWith("/signup/verify")) return true;
+  /** Email approve/reject links — token auth only, no app login. */
+  if (isLeaveEmailPublicPath(pathname)) return true;
+  return false;
+}
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -14,7 +24,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (!token && !publicUnauthenticatedRoutes.has(pathname)) {
+  if (!token && !isPublicUnauthenticatedPath(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -35,6 +45,7 @@ export const config = {
     "/attendance-upload",
     "/attendance-entry",
     "/leave/:path*",
+    "/leaves/:path*",
     "/payroll/:path*",
     "/reports/:path*",
     "/settings/:path*",
