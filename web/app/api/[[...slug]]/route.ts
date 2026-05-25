@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 import { isAbsoluteHttpUrl } from "@/lib/envApi";
 
 export const runtime = "nodejs";
+/** Allow slow upstream (e.g. Render cold start) when browser still uses `/api` proxy. */
+export const maxDuration = 60;
 
 function trimTrailingPathSeparators(s: string): string {
   return s.replace(/[/\\]+$/, "");
