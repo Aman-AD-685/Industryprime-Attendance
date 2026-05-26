@@ -62,10 +62,14 @@ export function TodayCard({
                 className={reducedMotion ? "" : "motion-safe:transition-[stroke-dashoffset] duration-500"}
               />
             </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <span className="text-xs font-medium text-[#7A8784]">Worked</span>
-              <span className="text-2xl font-semibold tabular-nums text-[#0F1F1B]">{formatWorkedHM(today.minutesWorked)}</span>
-              <span className="text-[10px] font-medium leading-tight text-[#374151]">/ {formatTargetHr(today.targetMinutes)}</span>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2 text-center">
+              <span className="text-xs font-semibold uppercase tracking-wide text-[#5C6B66]">Worked</span>
+              <span className="text-2xl font-bold tabular-nums leading-none text-[#0F1F1B]">
+                {formatWorkedHM(today.minutesWorked)}
+              </span>
+              <span className="text-sm font-semibold tabular-nums leading-snug text-[#0F1F1B]/75">
+                / {formatTargetHr(today.targetMinutes)}
+              </span>
             </div>
           </div>
         </div>

@@ -7,7 +7,10 @@ description: >-
   pre-push review, why is the app slow, or production readiness.
 ---
 
-# Pre-Push Review (Compound Engineering)
+# Pre-Push Review (legacy — short)
+
+> **Prefer:** `.cursor/skills/pre-push-compound-review/SKILL.md` (7-step gate, scripts, journal, `memory.md`).  
+> Rule: `.cursor/rules/pre-push-compound-review.mdc` · Guide: `docs/PRE_PUSH_GUIDE.md`
 
 Act as senior staff engineer + security auditor + performance engineer. **Never push until this workflow completes.**
 

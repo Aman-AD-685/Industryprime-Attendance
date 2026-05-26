@@ -22,3 +22,6 @@ web/.git.disabled/
 .env.*
 !.env.example
 !web/.env.example
+
+# Local-only pre-push guard (SKILL, memory, journals, audit reports — never commit)
+.cursor/local/

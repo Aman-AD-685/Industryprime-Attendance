@@ -1,0 +1,25 @@
+---
+description: Mandatory local pre-push guard before git push. Vivid Doctor audit, memory.md, blocks on P0/vulnerabilities.
+alwaysApply: true
+---
+
+# Pre-push guard (mandatory — local memory)
+
+When the user asks to **commit**, **push**, **git push**, **deploy**, **go live**, or **production push**:
+
+1. Read **`.cursor/local/pre-push-guard/SKILL.md`** (full workflow).
+2. Read **`.cursor/local/pre-push-guard/memory.md`** (Step 0 — never skip).
+3. Run from repo root:
+   - `powershell -NoProfile -File .cursor/skills/pre-push-guard/scripts/collect-push-scope.ps1`
+   - `powershell -NoProfile -File .cursor/skills/pre-push-guard/scripts/run-production-audit.ps1`
+4. Read **`.cursor/local/pre-push-guard/last-run-report.md`** — must show **`VERDICT: SAFE`** before push.
+5. Run **ce-code-review** (report-only) when `ce-status.ps1` prints `CE_STATUS=enabled`.
+6. Print Pre-Push Report; **do not `git push`** if VERDICT is BLOCKED or any **P0** security issue.
+7. Update **`memory.md`** with new lessons; append **daily-journal** via `append-daily-log.ps1`.
+8. Never commit `.cursor/local/` (gitignored).
+
+Override only if user writes: `push despite critical: <reason>`.
+
+Optional machine hook: `.cursor/skills/pre-push-guard/scripts/install-pre-push-hook.ps1`
+
+Legacy: `.cursor/skills/pre-push-compound-review/` — use **pre-push-guard** + **local** paths above.
