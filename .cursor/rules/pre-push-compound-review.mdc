@@ -1,0 +1,8 @@
+---
+description: Legacy pointer — use pre-push-guard + local SKILL/memory instead.
+alwaysApply: false
+---
+
+# Superseded
+
+Use **`.cursor/rules/pre-push-guard.mdc`** and **`.cursor/local/pre-push-guard/SKILL.md`** (local, gitignored).

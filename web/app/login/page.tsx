@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { forgotPassword, getStoredUser, login } from "@/lib/auth";
+import { dashboardPathForRole, forgotPassword, getStoredUser, login } from "@/lib/auth";
 import { errorMessageForUser } from "@/lib/userFacingError";
 
 export default function LoginPage() {
   const router = useRouter();
+  const submitLock = useRef(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,8 +17,19 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
+  function redirectAfterAuth() {
+    const cached = getStoredUser();
+    if (cached) {
+      router.replace(dashboardPathForRole(cached.role));
+      return true;
+    }
+    return false;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitLock.current || loading) return;
+
     const emailTrim = email.trim();
     if (!emailTrim.includes("@")) {
       setError("Enter a valid email address.");
@@ -29,15 +41,19 @@ export default function LoginPage() {
       setInfo(null);
       return;
     }
+
+    submitLock.current = true;
     setLoading(true);
     setError(null);
     setInfo(null);
     try {
       const signedIn = await login(emailTrim, password);
-      router.replace(signedIn.role === "user" ? "/dashboard/user" : "/dashboard");
+      router.replace(dashboardPathForRole(signedIn.role));
     } catch (err) {
+      if (redirectAfterAuth()) return;
       setError(errorMessageForUser(err, "Sign-in did not complete. Please try again."));
     } finally {
+      submitLock.current = false;
       setLoading(false);
     }
   }
