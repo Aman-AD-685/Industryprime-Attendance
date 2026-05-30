@@ -219,20 +219,41 @@ export function clearAuth() {
   window.dispatchEvent(new Event("industryprime-auth-change"));
 }
 
+/** One in-flight login per email — prevents double-click / multi-submit races and rate-limit spikes. */
+let loginInFlight: { key: string; promise: Promise<AuthUser> } | null = null;
+
+export function dashboardPathForRole(role: Role): string {
+  return role === "user" ? "/dashboard/user" : "/dashboard";
+}
+
 export async function login(email: string, password: string): Promise<AuthUser> {
-  const data = await authRequest<AuthResponse>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-  if (!data?.access_token || !data?.user) {
-    throw new Error(
-      userFacingApiDetail(
-        "Login response was missing a token or user profile. Confirm /api proxies to your FastAPI app (see BACKEND_PROXY_TARGET / NEXT_PUBLIC_API_URL on Vercel).",
-      ),
-    );
+  const key = email.trim().toLowerCase();
+  if (loginInFlight?.key === key) {
+    return loginInFlight.promise;
   }
-  storeAuth(data.access_token, data.user);
-  return data.user;
+
+  const promise = (async () => {
+    const data = await authRequest<AuthResponse>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: key, password }),
+    });
+    if (!data?.access_token || !data?.user) {
+      throw new Error(
+        userFacingApiDetail(
+          "Login response was missing a token or user profile. Confirm /api proxies to your FastAPI app (see BACKEND_PROXY_TARGET / NEXT_PUBLIC_API_URL on Vercel).",
+        ),
+      );
+    }
+    storeAuth(data.access_token, data.user);
+    return data.user;
+  })();
+
+  loginInFlight = { key, promise };
+  try {
+    return await promise;
+  } finally {
+    if (loginInFlight?.key === key) loginInFlight = null;
+  }
 }
 
 export async function signup(name: string, email: string, password: string): Promise<AuthUser> {

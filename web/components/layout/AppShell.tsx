@@ -12,6 +12,7 @@ import {
   clearAuth,
   getStoredToken,
   getStoredUser,
+  isSessionFresh,
   revalidateSessionUser,
   type AuthUser,
 } from "@/lib/auth";
@@ -149,6 +150,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       if (token && cached) {
         setUser(cached);
         setLoadingSession(false);
+        if (isSessionFresh()) return;
       } else if (!token) {
         setUser(null);
         setLoadingSession(false);
@@ -165,6 +167,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (loadingSession) return;
     if (!user && !isPublicRoute) {
+      const token = getStoredToken();
+      const cached = getStoredUser();
+      if (token && cached) {
+        setUser(cached);
+        return;
+      }
+      if (token) {
+        setLoadingSession(true);
+        return;
+      }
       router.replace("/login");
       return;
     }
