@@ -366,44 +366,41 @@ def calculate_user_leave_balance(
     *,
     today: Optional[date] = None,
 ) -> Dict[str, Any]:
-    counts, period = compute_absent_leave_used_by_employee(
+    from services.leave_service import (
+        LEAVE_BALANCE_ROLLING_START_MONTH,
+        leave_month_balance_snapshot,
+    )
+
+    counts_by_month, period_by_month = compute_absent_leave_used_by_months(
         supabase,
         {employee_id},
-        month,
+        list(range(1, month + 1)),
         year,
         today=today,
     )
-    used = float(counts.get(employee_id, 0))
-    ytd_before = float(
-        compute_ytd_absent_leave_used_before_month(
-            supabase,
-            {employee_id},
-            month,
-            year,
-            today=today,
-        ).get(employee_id, 0)
+    used = float(counts_by_month.get(month, {}).get(employee_id, 0))
+    prior_from_may = sum(
+        float(counts_by_month.get(m, {}).get(employee_id, 0))
+        for m in range(LEAVE_BALANCE_ROLLING_START_MONTH, month)
+        if m >= LEAVE_BALANCE_ROLLING_START_MONTH
     )
-    alloc = max(0.0, float(total_leave))
-    used_ytd_after = ytd_before + used
-
-    # Balance leave (pending before selected month).
-    balance_leave_pending = max(0.0, round(alloc - ytd_before, 2))
-
-    # Remaining balance after applying this month usage.
-    remaining_balance_after_month = max(0.0, round(balance_leave_pending - used, 2))
-
-    lop_days = max(0.0, round(used - balance_leave_pending, 2))
-    leave_exhausted = remaining_balance_after_month == 0 and alloc > 0 and used > 0
+    snap = leave_month_balance_snapshot(
+        total_leave=total_leave,
+        month_absent_days=used,
+        month=month,
+        prior_used_from_may=prior_from_may,
+    )
+    period = period_by_month.get(month, {})
 
     return {
         "employee_id": employee_id,
         "month": month,
         "year": year,
-        "total_leave": alloc,
+        "total_leave": float(snap["total_leave"]),
         "total_used": used,
-        "ytd_used_leave": round(used_ytd_after, 2),
-        "balance_leave": balance_leave_pending,
-        "lop_days": lop_days,
-        "leave_exhausted": leave_exhausted,
+        "ytd_used_leave": float(snap["ytd_used_leave"]),
+        "balance_leave": float(snap["balance_leave"]),
+        "lop_days": float(snap["lop_days"]),
+        "leave_exhausted": bool(snap["leave_exhausted"]),
         "attendance_period_end": period.get(employee_id),
     }

@@ -228,7 +228,7 @@ export default function LeavePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ year, total_leave: totalLeave }),
       });
-      // Balance Leave is "pending" (YTD remaining), so recalculate from backend.
+      // Balance Leave rolls from May — recalculate from backend after allocation edit.
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update leave allocation");
@@ -243,7 +243,7 @@ export default function LeavePage() {
         <div>
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Leave Management</h2>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-            Total Used is for the selected month only. Balance Leave is pending after all prior months plus this month.
+            Total Used is Attendance Atten. = A for the selected month. From May: Balance Leave = Total Leave − Used; each later month subtracts that month&apos;s Used from the previous balance.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
@@ -353,7 +353,7 @@ export default function LeavePage() {
                 <Metric label="Total Leave" value={row.total_leave} />
                 <Metric label="Total Used (month)" value={row.total_used_leave} />
                 <Metric
-                  label="Balance Leave (pending)"
+                  label="Balance Leave"
                   value={row.balance_leave}
                   strong
                   warn={Boolean(row.leave_exhausted) || (row.lop_days ?? 0) > 0}
@@ -393,7 +393,7 @@ export default function LeavePage() {
             <Detail label="Total Leave" value={selected.total_leave} />
             <Detail label="Total Used (month)" value={selected.total_used_leave} />
             <Detail
-              label="Balance Leave (pending)"
+              label="Balance Leave"
               value={selected.balance_leave}
               highlight
               warn={Boolean(selected.leave_exhausted) || (selected.lop_days ?? 0) > 0}

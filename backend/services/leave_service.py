@@ -11,6 +11,9 @@ from services.leave_balance_attendance_service import compute_absent_leave_used_
 # Fallback annual entitlement when no `leave_balances` row exists (email not in map).
 DEFAULT_ANNUAL_TOTAL_LEAVE = 23.0
 
+# Leave balance rolling starts in May: May = Total Leave − Used; later months chain from May.
+LEAVE_BALANCE_ROLLING_START_MONTH = 5
+
 # Known allocation (CL+SL) when there is no DB row — keep in sync with leave_balances_seed_by_email.sql.
 _DEFAULT_TOTAL_LEAVE_BY_EMAIL: Dict[str, float] = {
     "ea@industryprime.com": 16.0,
@@ -44,38 +47,44 @@ def leave_month_balance_snapshot(
     *,
     total_leave: float,
     month_absent_days: float,
-    ytd_absent_before_month: float,
+    month: int,
+    prior_used_from_may: float = 0,
 ) -> Dict[str, float | bool]:
     """
     Leave page + payroll use the same monthly snapshot for the selected year/month.
 
-    Accounting rules:
-    - Total Used (month) is the selected month absents count.
-    - Balance Leave (pending before the selected month) = Total Leave - Previously Used (YTD before month).
-    - Remaining Balance Leave (used for LOP math) = Balance Leave - Total Used (month).
+    Rolling balance from May (attendance Atten. = A):
+    - May (start month): Balance Leave = Total Leave − Total Used (month)
+    - June onward: Balance Leave = previous Balance Leave − Total Used (month)
+      (previous = Total Leave − sum(used from May .. prior month))
+    - Before May: Balance Leave = Total Leave − Total Used (month) for that month only
     """
     used = max(0.0, float(month_absent_days))
-    ytd_before = max(0.0, float(ytd_absent_before_month))
+    prior = max(0.0, float(prior_used_from_may))
     alloc = max(0.0, float(total_leave))
+    start_m = LEAVE_BALANCE_ROLLING_START_MONTH
 
-    previously_used = ytd_before
-    balance_leave_pending = max(0.0, round(alloc - previously_used, 2))
+    if month < start_m:
+        balance_at_month_start = alloc
+        balance_remaining = max(0.0, round(alloc - used, 2))
+        used_since_may = 0.0
+    else:
+        balance_at_month_start = max(0.0, round(alloc - prior, 2))
+        balance_remaining = max(0.0, round(balance_at_month_start - used, 2))
+        used_since_may = prior + used
 
-    # Remaining balance after deducting current month usage.
-    remaining_balance_after_month = max(0.0, round(balance_leave_pending - used, 2))
-
-    covered = min(used, balance_leave_pending)
-    # LOP is for the selected month only — days not covered by pending balance.
-    month_lop = max(0.0, round(used - balance_leave_pending, 2))
+    covered = min(used, balance_at_month_start)
+    month_lop = max(0.0, round(used - balance_at_month_start, 2))
 
     return {
         "total_leave": alloc,
         "total_used_leave": round(used, 2),
-        "ytd_used_leave": round(previously_used + used, 2),
-        "balance_leave": balance_leave_pending,
+        "ytd_used_leave": round(used_since_may, 2),
+        "balance_leave": balance_remaining,
+        "balance_at_month_start": round(balance_at_month_start, 2),
         "lop_days": month_lop,
         "leave_covered_days": round(covered, 2),
-        "leave_exhausted": remaining_balance_after_month == 0 and alloc > 0 and used > 0,
+        "leave_exhausted": balance_remaining == 0 and alloc > 0 and used > 0,
     }
 
 
@@ -288,14 +297,16 @@ def list_leave_summary(
         balance_row = balances_by_employee.get(emp_id)
         total_leave = get_allocated_total_leave(employee, balance_row)
         month_used = float(month_counts.get(emp_id, 0))
-        ytd_before = sum(
+        prior_from_may = sum(
             float(counts_by_month.get(m, {}).get(emp_id, 0))
-            for m in range(1, month)
+            for m in range(LEAVE_BALANCE_ROLLING_START_MONTH, month)
+            if m >= LEAVE_BALANCE_ROLLING_START_MONTH
         )
         snap = leave_month_balance_snapshot(
             total_leave=total_leave,
             month_absent_days=month_used,
-            ytd_absent_before_month=ytd_before,
+            month=month,
+            prior_used_from_may=prior_from_may,
         )
         output.append(
             {
@@ -310,7 +321,7 @@ def list_leave_summary(
                 "total_leave": float(snap["total_leave"]),
                 "total_used_leave": float(snap["total_used_leave"]),
                 "total_used": float(snap["total_used_leave"]),
-                "ytd_used_before_month": ytd_before,
+                "prior_used_from_may": prior_from_may,
                 "ytd_used_leave": float(snap["ytd_used_leave"]),
                 "balance_leave": float(snap["balance_leave"]),
                 "lop_days": float(snap["lop_days"]),

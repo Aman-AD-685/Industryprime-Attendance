@@ -6,7 +6,11 @@ from typing import Any, Dict, List
 
 from database.supabase_client import SupabaseRest, get_supabase
 from services.leave_balance_attendance_service import compute_absent_leave_used_by_months
-from services.leave_service import get_allocated_total_leave, leave_month_balance_snapshot
+from services.leave_service import (
+    LEAVE_BALANCE_ROLLING_START_MONTH,
+    get_allocated_total_leave,
+    leave_month_balance_snapshot,
+)
 from services.payroll_attendance_summary_service import compute_payroll_attendance_metrics
 from services.payroll_constants import PAYROLL_SALARY_DAYS_PER_MONTH
 from services.payslip_service import compute_payslip
@@ -119,10 +123,12 @@ def summarize_payroll(
         leave_snap = leave_month_balance_snapshot(
             total_leave=total_leave,
             month_absent_days=float(absent),
-            ytd_absent_before_month=float(
+            month=month,
+            prior_used_from_may=float(
                 sum(
                     int(leave_counts_by_month.get(m, {}).get(emp_id, 0))
-                    for m in range(1, month)
+                    for m in range(LEAVE_BALANCE_ROLLING_START_MONTH, month)
+                    if m >= LEAVE_BALANCE_ROLLING_START_MONTH
                 )
             ),
         )
