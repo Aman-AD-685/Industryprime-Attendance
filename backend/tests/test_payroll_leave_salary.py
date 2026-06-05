@@ -13,7 +13,7 @@ def test_absents_fully_covered_by_leave_balance() -> None:
     )
     assert snap["leave_covered_days"] == 3
     assert snap["lop_days"] == 0
-    assert snap["balance_leave"] == 12
+    assert snap["balance_leave"] == 15
     assert snap["total_used_leave"] == 3
 
 
@@ -25,7 +25,7 @@ def test_absents_partially_covered_lop_reduces_salary() -> None:
     )
     assert snap["leave_covered_days"] == 2
     assert snap["lop_days"] == 3
-    assert snap["balance_leave"] == 0
+    assert snap["balance_leave"] == 2
     assert snap["leave_exhausted"] is True
 
 
@@ -68,6 +68,6 @@ def test_one_absent_with_21_allocation() -> None:
         month_absent_days=1,
         ytd_absent_before_month=0,
     )
-    assert snap["balance_leave"] == 20
+    assert snap["balance_leave"] == 21
     assert snap["lop_days"] == 0
     assert snap["leave_covered_days"] == 1

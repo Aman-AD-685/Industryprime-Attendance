@@ -49,32 +49,33 @@ def leave_month_balance_snapshot(
     """
     Leave page + payroll use the same monthly snapshot for the selected year/month.
 
-    Display rules:
-    - total_used_leave = absent days in the selected month only (attendance status A)
-    - balance_leave = pending balance after subtracting YTD usage (includes months < month and this month)
-    - lop_days = this month's LOP only (absents not covered by balance at month start)
-    - leave_covered_days = paid days in this month covered by remaining balance at month start
+    Accounting rules:
+    - Total Used (month) is the selected month absents count.
+    - Balance Leave (pending before the selected month) = Total Leave - Previously Used (YTD before month).
+    - Remaining Balance Leave (used for LOP math) = Balance Leave - Total Used (month).
     """
     used = max(0.0, float(month_absent_days))
     ytd_before = max(0.0, float(ytd_absent_before_month))
     alloc = max(0.0, float(total_leave))
 
-    used_ytd_after = ytd_before + used
-    balance = max(0.0, round(alloc - used_ytd_after, 2))
+    previously_used = ytd_before
+    balance_leave_pending = max(0.0, round(alloc - previously_used, 2))
 
-    remaining_at_month_start = max(0.0, round(alloc - ytd_before, 2))
-    covered = min(used, remaining_at_month_start)
-    # LOP is for the selected month only — days not covered by balance at month start.
-    month_lop = max(0.0, round(used - remaining_at_month_start, 2))
+    # Remaining balance after deducting current month usage.
+    remaining_balance_after_month = max(0.0, round(balance_leave_pending - used, 2))
+
+    covered = min(used, balance_leave_pending)
+    # LOP is for the selected month only — days not covered by pending balance.
+    month_lop = max(0.0, round(used - balance_leave_pending, 2))
 
     return {
         "total_leave": alloc,
         "total_used_leave": round(used, 2),
-        "ytd_used_leave": round(used_ytd_after, 2),
-        "balance_leave": balance,
+        "ytd_used_leave": round(previously_used + used, 2),
+        "balance_leave": balance_leave_pending,
         "lop_days": month_lop,
         "leave_covered_days": round(covered, 2),
-        "leave_exhausted": balance == 0 and alloc > 0 and used > 0,
+        "leave_exhausted": remaining_balance_after_month == 0 and alloc > 0 and used > 0,
     }
 
 

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import calendar
 import json
-import re
 from collections import defaultdict
 from datetime import date
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -66,32 +65,9 @@ def _holiday_dates_in_range(supabase: SupabaseRest, start: date, end: date) -> S
     return out
 
 
-_ABSENT_TOKEN_RE = re.compile(r"(^|[^0-9A-Za-z])absent([^0-9A-Za-z]|$)", flags=re.IGNORECASE)
-
-
-def _ot_sf_indicates_absent(fs: Any) -> bool:
-    """
-    Mirror payroll logic: some rows can have status != 'A' but still be marked Absent by
-    final_status/status_ot_sf.
-    """
-    tl = str(fs or "")
-    if not tl:
-        return False
-    if "not absent" in tl.lower():
-        return False
-    return bool(_ABSENT_TOKEN_RE.search(tl))
-
-
 def _is_absent_status(row: Dict[str, Any]) -> bool:
-    # Mirror payroll behavior:
-    # - If OT/SF or final_status explicitly says Absent → absent.
-    # - If OT/SF/final_status is explicitly set and does NOT say Absent → not absent.
-    # - Only when OT/SF/final_status is missing do we fall back to raw `status == 'A'`.
-    fs = row.get("final_status") or row.get("status_ot_sf")
-    tl = str(fs or "").strip()
-    if tl:
-        return _ot_sf_indicates_absent(tl)
-
+    # Leave “Total Used” must match Attendance grid “Atten.” column.
+    # Attendance grid marks Absent when `status === "A"`.
     return str(row.get("status") or "").strip().upper() == "A"
 
 
@@ -105,7 +81,7 @@ def _fetch_attendance_month_slice(
     try:
         return supabase.select(
             table="attendance",
-            select="employee_id,date,status,final_status",
+            select="employee_id,date,status",
             where_gte={"date": month_start.isoformat()},
             where_lte={"date": query_end.isoformat()},
             limit=500_000,
@@ -409,11 +385,15 @@ def calculate_user_leave_balance(
     )
     alloc = max(0.0, float(total_leave))
     used_ytd_after = ytd_before + used
-    remaining_at_month_start = max(0.0, round(alloc - ytd_before, 2))
 
-    balance_leave = max(0.0, round(alloc - used_ytd_after, 2))
-    lop_days = max(0.0, round(used - remaining_at_month_start, 2))
-    leave_exhausted = balance_leave == 0 and alloc > 0 and used > 0
+    # Balance leave (pending before selected month).
+    balance_leave_pending = max(0.0, round(alloc - ytd_before, 2))
+
+    # Remaining balance after applying this month usage.
+    remaining_balance_after_month = max(0.0, round(balance_leave_pending - used, 2))
+
+    lop_days = max(0.0, round(used - balance_leave_pending, 2))
+    leave_exhausted = remaining_balance_after_month == 0 and alloc > 0 and used > 0
 
     return {
         "employee_id": employee_id,
@@ -422,7 +402,7 @@ def calculate_user_leave_balance(
         "total_leave": alloc,
         "total_used": used,
         "ytd_used_leave": round(used_ytd_after, 2),
-        "balance_leave": balance_leave,
+        "balance_leave": balance_leave_pending,
         "lop_days": lop_days,
         "leave_exhausted": leave_exhausted,
         "attendance_period_end": period.get(employee_id),

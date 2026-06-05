@@ -46,7 +46,8 @@ def test_final_status_absent_counts() -> None:
         "status": "P",
         "final_status": "Absent",
     }
-    assert _is_countable_leave_absent(row, day, set(), has_table_row=True) is True
+    # Leave “Total Used” must match Attendance grid Atten column which is driven by `status`.
+    assert _is_countable_leave_absent(row, day, set(), has_table_row=True) is False
 
 
 def test_final_status_ot_is_not_absent() -> None:
@@ -57,7 +58,7 @@ def test_final_status_ot_is_not_absent() -> None:
         "status": "A",  # raw status can be inconsistent
         "final_status": "OT",
     }
-    assert _is_countable_leave_absent(row, day, set(), has_table_row=True) is False
+    assert _is_countable_leave_absent(row, day, set(), has_table_row=True) is True
 
 
 def test_merged_count_includes_snapshot_absents() -> None:
