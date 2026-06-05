@@ -14,7 +14,7 @@ from __future__ import annotations
 import calendar
 import json
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from database.supabase_client import SupabaseRest
@@ -239,6 +239,91 @@ def compute_absent_leave_used_by_employee(
             period_end[eid] = att_end.isoformat() if att_end else None
 
     return counts, period_end
+
+
+def compute_ytd_absent_leave_used_before_month(
+    supabase: SupabaseRest,
+    employee_ids: Set[str],
+    month: int,
+    year: int,
+    *,
+    today: Optional[date] = None,
+) -> Dict[str, int]:
+    """
+    Sum absent days for months 1 .. month-1 in one year (batched DB reads).
+    Used by payroll leave-balance / LOP salary adjustment.
+    """
+    d = today or date.today()
+    ytd: Dict[str, int] = {eid: 0 for eid in employee_ids}
+    if month <= 1 or not employee_ids or not (1 <= month <= 12):
+        return ytd
+
+    year_start = date(year, 1, 1)
+    prev_month_last = date(year, month, 1) - timedelta(days=1)
+    range_end = min(prev_month_last, d)
+    if range_end < year_start:
+        return ytd
+
+    holidays = _holiday_dates_in_range(supabase, year_start, range_end)
+    att_rows = _fetch_attendance_month_slice(supabase, year_start, range_end)
+
+    rows_by_eid: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for row in att_rows or []:
+        eid = str(row.get("employee_id") or "")
+        if eid in employee_ids:
+            rows_by_eid[eid].append(row)
+
+    snap_by_eid_month: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
+    try:
+        snap_rows = supabase.select(
+            table="monthly_attendance",
+            select="employee_id,month,stored_data",
+            where_eq={"year": year},
+            limit=5000,
+        )
+        for sr in snap_rows or []:
+            try:
+                m = int(sr.get("month") or 0)
+            except (TypeError, ValueError):
+                continue
+            if m < 1 or m >= month:
+                continue
+            eid = str(sr.get("employee_id") or "")
+            if eid in employee_ids:
+                snap_by_eid_month[(eid, m)] = _normalize_stored_data(sr.get("stored_data"))
+    except Exception:
+        pass
+
+    for eid in employee_ids:
+        erows = rows_by_eid.get(eid) or []
+        total = 0
+        for m in range(1, month):
+            month_start = date(year, m, 1)
+            month_end = date(year, m, calendar.monthrange(year, m)[1])
+            if month_start > d:
+                break
+            query_end = min(month_end, d)
+            month_erows = [
+                r
+                for r in erows
+                if (dd := _parse_row_date(r)) is not None and month_start <= dd <= query_end
+            ]
+            att_c, _ = _count_absent_from_attendance_db_rows(
+                month_erows,
+                month_start,
+                query_end,
+                month_end,
+                holidays,
+            )
+            snap = snap_by_eid_month.get((eid, m))
+            if snap:
+                snap_c, _ = _count_absent_from_day_rows(snap, month_start, query_end, holidays)
+                total += max(int(snap_c), int(att_c))
+            else:
+                total += int(att_c)
+        ytd[eid] = total
+
+    return ytd
 
 
 def calculate_user_leave_balance(

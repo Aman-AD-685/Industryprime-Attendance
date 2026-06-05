@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch, apiFetchBlob } from "@/lib/api";
+import { apiFetch, apiFetchBlob, PAYROLL_API_TIMEOUT_MS } from "@/lib/api";
 
 type Employee = {
   id: string;
@@ -31,6 +31,7 @@ type PayslipDeductions = {
   pf_employee: number | null;
   professional_tax: number | null;
   income_tax_tds: number | null;
+  lop_deduction?: number | null;
   late_deduction: number | null;
   total: number;
 };
@@ -42,6 +43,7 @@ type PayslipDisplay = {
   pf_blank: boolean;
   professional_tax_blank: boolean;
   tds_blank: boolean;
+  lop_blank?: boolean;
   late_blank: boolean;
 };
 
@@ -55,6 +57,8 @@ type Payslip = {
   weekoff_days: number;
   holiday_days: number;
   salary_eligible_days: number;
+  leave_covered_days?: number;
+  lop_days?: number;
   monthly_salary: number;
   earnings: PayslipEarnings;
   deductions: PayslipDeductions;
@@ -66,6 +70,9 @@ type LeaveSummary = {
   total_leave: number;
   total_used_leave: number;
   balance_leave: number;
+  month_used_leave?: number;
+  leave_covered_days?: number;
+  lop_days?: number;
 };
 
 type PayrollItem = {
@@ -84,6 +91,8 @@ type PayrollItem = {
   weekoff_days?: number;
   holiday_days?: number;
   salary_eligible_days?: number;
+  leave_covered_days?: number;
+  lop_days?: number;
   attendance_period_end?: string | null;
   total_hours_in_office: number;
   total_sundays: number;
@@ -239,7 +248,7 @@ function PayslipDocument({
             { k: "Working", v: ps.working_days, red: false },
             { k: "Present", v: ps.present_days, red: false },
             { k: "Absent", v: ps.absent_days, red: true },
-            { k: "Late", v: late, red: false },
+            { k: "LOP", v: ps.lop_days ?? item.leave?.lop_days ?? 0, red: true },
           ] as const
         ).map((c) => (
           <div key={c.k} className="px-2 py-3 text-center sm:px-3 sm:py-4">
@@ -248,6 +257,23 @@ function PayslipDocument({
           </div>
         ))}
       </div>
+
+      {(item.leave?.balance_leave != null || (ps.leave_covered_days ?? 0) > 0) && (
+        <div className="grid grid-cols-3 gap-3 border-b border-zinc-200 bg-zinc-50 px-5 py-3 text-sm">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">Balance leave</div>
+            <div className="font-semibold text-zinc-900">{item.leave?.balance_leave ?? "—"} days</div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">On leave (paid)</div>
+            <div className="font-semibold text-emerald-700">{ps.leave_covered_days ?? item.leave?.leave_covered_days ?? 0} days</div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">LOP (salary cut)</div>
+            <div className="font-semibold text-red-600">{ps.lop_days ?? item.leave?.lop_days ?? 0} days</div>
+          </div>
+        </div>
+      )}
 
       {/* Earnings | Deductions */}
       <div className="grid border-b border-zinc-200 bg-white sm:grid-cols-2">
@@ -293,6 +319,12 @@ function PayslipDocument({
               <tr className="border-b border-zinc-100">
                 <td className="py-2 text-zinc-600">Income tax (TDS)</td>
                 <td className="py-2 text-right font-medium text-zinc-900">{moneySignedDeduction(ps.deductions.income_tax_tds, d.tds_blank)}</td>
+              </tr>
+              <tr className="border-b border-zinc-100">
+                <td className="py-2 text-zinc-600">LOP deduction</td>
+                <td className="py-2 text-right font-medium text-zinc-900">
+                  {moneySignedDeduction(ps.deductions.lop_deduction, d.lop_blank ?? true)}
+                </td>
               </tr>
               <tr className="border-b border-zinc-100">
                 <td className="py-2 text-zinc-600">Late deduction</td>
@@ -352,7 +384,11 @@ export default function PayrollPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiFetch<{ items: PayrollItem[] }>(`/payroll/summary?month=${month}&year=${year}`);
+      const data = await apiFetch<{ items: PayrollItem[] }>(
+        `/payroll/summary?month=${month}&year=${year}`,
+        undefined,
+        PAYROLL_API_TIMEOUT_MS,
+      );
       setItems(data.items || []);
       setSelectedId((current) => current || data.items?.[0]?.employee.id || null);
     } catch (err) {
@@ -389,7 +425,11 @@ export default function PayrollPage() {
     setPdfBusy(true);
     setError(null);
     try {
-      const blob = await apiFetchBlob(`/payroll/payslip-pdf?month=${m}&year=${y}&employee_id=${encodeURIComponent(empId)}`);
+      const blob = await apiFetchBlob(
+        `/payroll/payslip-pdf?month=${m}&year=${y}&employee_id=${encodeURIComponent(empId)}`,
+        undefined,
+        PAYROLL_API_TIMEOUT_MS,
+      );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -490,10 +530,12 @@ export default function PayrollPage() {
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <Metric tint="present" label="Present" value={item.total_days_present} />
-                <Metric tint="absent" label="Absent (leave used)" value={item.total_days_absent} />
+                <Metric tint="absent" label="Absent (month)" value={item.total_days_absent} />
                 <Metric tint="weekoff" label="Weekoff" value={item.weekoff_days ?? item.total_sundays ?? 0} />
                 <Metric tint="holiday" label="Holiday" value={item.holiday_days ?? item.holidays ?? 0} />
                 <Metric tint="salary" label="Salary days" value={item.salary_eligible_days ?? item.total_days_present} />
+                <Metric label="Balance leave" value={item.leave?.balance_leave ?? "—"} />
+                <Metric tint="absent" label="LOP days" value={item.lop_days ?? item.leave?.lop_days ?? 0} />
                 <Metric label="Hours" value={item.total_hours_in_office} />
               </div>
               <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
