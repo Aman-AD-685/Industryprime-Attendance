@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { clearAuth, getStoredUser, type AuthUser } from "@/lib/auth";
+import { clearAuth, getStoredUser, navigateAfterAuth, type AuthUser } from "@/lib/auth";
 import { IconLogOut } from "./icons";
 
 export default function UserMenu() {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -32,8 +30,7 @@ export default function UserMenu() {
   function handleSignOut() {
     setOpen(false);
     clearAuth();
-    router.replace("/login");
-    router.refresh();
+    navigateAfterAuth("/login");
   }
 
   const displayName = user?.name || "User";

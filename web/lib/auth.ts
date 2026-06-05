@@ -212,8 +212,30 @@ export async function storeAuth(token: string, user: AuthUser): Promise<void> {
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
   window.localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
   setCookie(COOKIE_NAME, token, 60 * 60 * 8);
-  await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
   window.dispatchEvent(new Event("industryprime-auth-change"));
+}
+
+/**
+ * Full page navigation after login/signup (production-safe).
+ * Soft `router.replace()` can navigate before `industryprime_token` is on the request,
+ * so `proxy.ts` sends the user back to /login until a manual refresh.
+ */
+export function navigateAfterAuth(path: string): void {
+  if (typeof window === "undefined") return;
+  const dest = path.startsWith("/") ? path : `/${path}`;
+  const publicDest =
+    dest === "/login" ||
+    dest === "/signup" ||
+    dest.startsWith("/signup/") ||
+    dest === "/attendance-entry" ||
+    dest === "/attendance-upload";
+  if (!publicDest && !getStoredToken() && !readCookieRaw(COOKIE_NAME)) {
+    return;
+  }
+  window.location.replace(dest);
 }
 
 export function clearAuth(): void {

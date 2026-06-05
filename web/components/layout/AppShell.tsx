@@ -10,9 +10,11 @@ import Sidebar from "./Sidebar";
 import { cn } from "@/lib/cn";
 import {
   clearAuth,
+  dashboardPathForRole,
   getStoredToken,
   getStoredUser,
   isSessionFresh,
+  navigateAfterAuth,
   revalidateSessionUser,
   type AuthUser,
 } from "@/lib/auth";
@@ -98,6 +100,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       if (token && cached) {
         setUser(cached);
         setLoadingSession(false);
+        navigateAfterAuth(dashboardPathForRole(cached.role));
       } else if (!token) {
         setUser(null);
         setLoadingSession(false);
@@ -181,7 +184,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       return;
     }
     if (user && redirectIfAuthedPublic) {
-      router.replace(user.role === "user" ? "/dashboard/user" : "/dashboard");
+      navigateAfterAuth(dashboardPathForRole(user.role));
     }
   }, [isPublicRoute, loadingSession, pathname, redirectIfAuthedPublic, router, user]);
 

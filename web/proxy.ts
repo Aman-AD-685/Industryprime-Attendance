@@ -16,6 +16,27 @@ function isPublicUnauthenticatedPath(pathname: string): boolean {
   return false;
 }
 
+function dashboardPathForJwtRole(role: string | null | undefined): string {
+  if (role === "user") return "/dashboard/user";
+  if (role === "admin" || role === "master_admin") return "/dashboard";
+  return "/dashboard";
+}
+
+/** Read role claim from JWT payload (no signature verify — routing hint only). */
+function roleFromAuthToken(token: string): string | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const json = atob(padded);
+    const payload = JSON.parse(json) as { role?: string };
+    return typeof payload.role === "string" ? payload.role : null;
+  } catch {
+    return null;
+  }
+}
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get(AUTH_COOKIE)?.value;
@@ -29,7 +50,8 @@ export function proxy(request: NextRequest) {
   }
 
   if (token && redirectIfAuthedRoutes.has(pathname)) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    const dest = dashboardPathForJwtRole(roleFromAuthToken(token));
+    return NextResponse.redirect(new URL(dest, request.url));
   }
 
   return NextResponse.next();
@@ -38,16 +60,25 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     "/",
+    "/dashboard",
     "/dashboard/:path*",
+    "/users",
     "/users/:path*",
+    "/employees",
     "/employees/:path*",
+    "/attendance",
     "/attendance/:path*",
     "/attendance-upload",
     "/attendance-entry",
+    "/leave",
     "/leave/:path*",
+    "/leaves",
     "/leaves/:path*",
+    "/payroll",
     "/payroll/:path*",
+    "/reports",
     "/reports/:path*",
+    "/settings",
     "/settings/:path*",
     "/login",
     "/signup",

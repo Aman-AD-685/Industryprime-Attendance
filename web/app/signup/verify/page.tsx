@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getStoredUser, signupResend, signupVerify } from "@/lib/auth";
+import { dashboardPathForRole, getStoredUser, navigateAfterAuth, signupResend, signupVerify } from "@/lib/auth";
 
 function parseEmail(raw: string | null): string {
   return (raw || "").trim().toLowerCase();
@@ -76,8 +76,10 @@ function SignupVerifyContent() {
       } catch {
         /* ignore */
       }
-      router.replace(getStoredUser()?.role === "user" ? "/dashboard/user" : "/dashboard");
-      router.refresh();
+      const cached = getStoredUser();
+      if (cached) {
+        navigateAfterAuth(dashboardPathForRole(cached.role));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
     } finally {

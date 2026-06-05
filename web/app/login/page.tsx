@@ -3,12 +3,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { dashboardPathForRole, forgotPassword, getStoredUser, login } from "@/lib/auth";
+import { dashboardPathForRole, forgotPassword, getStoredUser, login, navigateAfterAuth } from "@/lib/auth";
 import { errorMessageForUser } from "@/lib/userFacingError";
 
 export default function LoginPage() {
-  const router = useRouter();
   const submitLock = useRef(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,7 +18,7 @@ export default function LoginPage() {
   function redirectAfterAuth() {
     const cached = getStoredUser();
     if (cached) {
-      router.replace(dashboardPathForRole(cached.role));
+      navigateAfterAuth(dashboardPathForRole(cached.role));
       return true;
     }
     return false;
@@ -46,17 +44,19 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     setInfo(null);
+    let navigated = false;
     try {
       const signedIn = await login(emailTrim, password);
-      const destination = dashboardPathForRole(signedIn.role);
-      await Promise.resolve();
-      router.replace(destination);
+      navigated = true;
+      navigateAfterAuth(dashboardPathForRole(signedIn.role));
     } catch (err) {
       if (redirectAfterAuth()) return;
       setError(errorMessageForUser(err, "Sign-in did not complete. Please try again."));
     } finally {
-      submitLock.current = false;
-      setLoading(false);
+      if (!navigated) {
+        submitLock.current = false;
+        setLoading(false);
+      }
     }
   }
 

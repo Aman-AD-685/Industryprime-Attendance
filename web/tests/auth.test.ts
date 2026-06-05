@@ -46,25 +46,32 @@ async function loadAuthModule() {
   return import("@/lib/auth");
 }
 
-/** Mirrors login page submit handler — redirect only after login() resolves. */
+/** Mirrors login page submit handler — hard navigation after login() resolves. */
 async function loginPageSubmit(
   auth: Awaited<ReturnType<typeof loadAuthModule>>,
-  router: { replace: (path: string) => void },
+  location: { replace: (path: string) => void },
   email: string,
   password: string,
 ) {
   const signedIn = await auth.login(email, password);
-  const destination = auth.dashboardPathForRole(signedIn.role);
-  await Promise.resolve();
-  router.replace(destination);
+  auth.navigateAfterAuth(auth.dashboardPathForRole(signedIn.role));
+  void location.replace;
 }
 
 describe("auth login flow", () => {
+  const locationReplace = vi.fn();
+
   beforeEach(() => {
     vi.resetModules();
     localStorage.clear();
     clearAllCookies();
+    locationReplace.mockReset();
     vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("location", {
+      replace: locationReplace,
+      href: "http://localhost/login",
+      assign: vi.fn(),
+    });
   });
 
   afterEach(() => {
@@ -72,9 +79,8 @@ describe("auth login flow", () => {
     vi.restoreAllMocks();
   });
 
-  it("Scenario 1 — happy path: storage populated before router.replace", async () => {
+  it("Scenario 1 — happy path: storage populated before navigateAfterAuth", async () => {
     const auth = await loadAuthModule();
-    const router = { replace: vi.fn() };
     const payload = mockLoginResponse("admin");
 
     vi.mocked(fetch).mockResolvedValueOnce(
@@ -83,18 +89,19 @@ describe("auth login flow", () => {
 
     let tokenAtRedirect: string | null = null;
     let cookieAtRedirect: string | null = null;
-    router.replace = vi.fn(() => {
+    locationReplace.mockImplementation(() => {
       tokenAtRedirect = localStorage.getItem(TOKEN_KEY);
       cookieAtRedirect = readCookie(COOKIE_NAME);
     });
 
-    await loginPageSubmit(auth, router, "test@company.com", "password123");
+    await auth.login("test@company.com", "password123");
+    auth.navigateAfterAuth(auth.dashboardPathForRole("admin"));
 
     expect(tokenAtRedirect).toBe("jwt-token-abc");
     expect(cookieAtRedirect).toBe("jwt-token-abc");
     expect(localStorage.getItem(USER_KEY)).toBe(JSON.stringify(payload.user));
-    expect(router.replace).toHaveBeenCalledOnce();
-    expect(router.replace).toHaveBeenCalledWith("/dashboard");
+    expect(locationReplace).toHaveBeenCalledOnce();
+    expect(locationReplace).toHaveBeenCalledWith("/dashboard");
   });
 
   it("Scenario 2 — role redirects", async () => {
@@ -108,7 +115,6 @@ describe("auth login flow", () => {
 
   it("Scenario 3 — 401 failure: no storage writes, no redirect", async () => {
     const auth = await loadAuthModule();
-    const router = { replace: vi.fn() };
 
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ detail: "Invalid email or password." }), {
@@ -117,16 +123,15 @@ describe("auth login flow", () => {
       }),
     );
 
-    await expect(loginPageSubmit(auth, router, "bad@company.com", "wrongpass1")).rejects.toThrow();
+    await expect(loginPageSubmit(auth, { replace: locationReplace }, "bad@company.com", "wrongpass1")).rejects.toThrow();
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(localStorage.getItem(USER_KEY)).toBeNull();
     expect(readCookie(COOKIE_NAME)).toBeNull();
-    expect(router.replace).not.toHaveBeenCalled();
+    expect(locationReplace).not.toHaveBeenCalled();
   });
 
   it("Scenario 4 — 429 rate limit: no storage, no redirect, exact message", async () => {
     const auth = await loadAuthModule();
-    const router = { replace: vi.fn() };
 
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ detail: "Too many attempts. Please wait a minute and try again." }), {
@@ -135,23 +140,24 @@ describe("auth login flow", () => {
       }),
     );
 
-    await expect(loginPageSubmit(auth, router, "test@company.com", "password123")).rejects.toThrow(
+    await expect(loginPageSubmit(auth, { replace: locationReplace }, "test@company.com", "password123")).rejects.toThrow(
       "Too many attempts. Please wait a minute and try again.",
     );
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(readCookie(COOKIE_NAME)).toBeNull();
-    expect(router.replace).not.toHaveBeenCalled();
+    expect(locationReplace).not.toHaveBeenCalled();
   });
 
   it("Scenario 5 — network timeout: no redirect", async () => {
     const auth = await loadAuthModule();
-    const router = { replace: vi.fn() };
 
     const abortErr = new DOMException("The operation was aborted.", "AbortError");
     vi.mocked(fetch).mockRejectedValueOnce(abortErr);
 
-    await expect(loginPageSubmit(auth, router, "test@company.com", "password123")).rejects.toThrow(/timed out/i);
-    expect(router.replace).not.toHaveBeenCalled();
+    await expect(loginPageSubmit(auth, { replace: locationReplace }, "test@company.com", "password123")).rejects.toThrow(
+      /timed out/i,
+    );
+    expect(locationReplace).not.toHaveBeenCalled();
   });
 
   it("Scenario 6 — double-submit lock: second click blocked while first in flight", async () => {
@@ -201,30 +207,34 @@ describe("auth login flow", () => {
     localStorage.setItem(SESSION_TIMESTAMP_KEY, sixMinutesAgo);
     expect(auth.isSessionFresh()).toBe(false);
 
-    const router = { replace: vi.fn() };
     const guardRedirect = () => {
-      if (!auth.getStoredToken()) router.replace("/login");
+      if (!auth.getStoredToken()) locationReplace("/login");
     };
     auth.clearAuth();
     guardRedirect();
-    expect(router.replace).toHaveBeenCalledWith("/login");
+    expect(locationReplace).toHaveBeenCalledWith("/login");
   });
 
   it("Scenario 8 — logout clears all storage and redirects to login", async () => {
     const auth = await loadAuthModule();
-    const router = { replace: vi.fn() };
 
     await auth.storeAuth("logout-token", sampleUser("user"));
     expect(localStorage.getItem(TOKEN_KEY)).not.toBeNull();
 
     auth.clearAuth();
-    router.replace("/login");
+    auth.navigateAfterAuth("/login");
 
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(localStorage.getItem(USER_KEY)).toBeNull();
     expect(localStorage.getItem(SESSION_TIMESTAMP_KEY)).toBeNull();
     expect(readCookie(COOKIE_NAME)).toBeNull();
-    expect(router.replace).toHaveBeenCalledWith("/login");
+    expect(locationReplace).toHaveBeenCalledWith("/login");
+  });
+
+  it("Scenario 10 — navigateAfterAuth no-op without session", async () => {
+    const auth = await loadAuthModule();
+    auth.navigateAfterAuth("/dashboard");
+    expect(locationReplace).not.toHaveBeenCalled();
   });
 
   it("Scenario 9 — forgot password returns same generic message for any email", async () => {
