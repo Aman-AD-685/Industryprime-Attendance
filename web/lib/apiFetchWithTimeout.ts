@@ -5,6 +5,9 @@ export const DEFAULT_API_TIMEOUT_MS = 12_000;
 /** Payroll summary aggregates attendance + leave for all employees — allow more time locally. */
 export const PAYROLL_API_TIMEOUT_MS = 45_000;
 
+/** Leave summary loads YTD + monthly absents for all employees. */
+export const LEAVE_API_TIMEOUT_MS = 45_000;
+
 export async function fetchWithTimeout(
   url: string,
   init?: RequestInit,

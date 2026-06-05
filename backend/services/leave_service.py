@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from database.supabase_client import SupabaseRest, get_supabase
 
-from services.leave_balance_attendance_service import compute_absent_leave_used_by_employee
+from services.leave_balance_attendance_service import compute_absent_leave_used_by_months
 
 # Fallback annual entitlement when no `leave_balances` row exists (email not in map).
 DEFAULT_ANNUAL_TOTAL_LEAVE = 23.0
@@ -44,25 +44,35 @@ def leave_month_balance_snapshot(
     *,
     total_leave: float,
     month_absent_days: float,
+    ytd_absent_before_month: float,
 ) -> Dict[str, float | bool]:
     """
     Leave page + payroll use the same monthly snapshot for the selected year/month.
 
-    - total_used_leave = absent days in that month (attendance status A)
-    - balance_leave = total_leave − month_absent_days (floored at 0)
-    - lop_days = absents beyond allocation this month
-    - leave_covered_days = min(month_absents, total_leave) — no salary LOP for these days
+    Display rules:
+    - total_used_leave = absent days in the selected month only (attendance status A)
+    - balance_leave = pending balance after subtracting YTD usage (includes months < month and this month)
+    - lop_days = this month's LOP only (absents not covered by balance at month start)
+    - leave_covered_days = paid days in this month covered by remaining balance at month start
     """
     used = max(0.0, float(month_absent_days))
+    ytd_before = max(0.0, float(ytd_absent_before_month))
     alloc = max(0.0, float(total_leave))
-    balance = max(0.0, round(alloc - used, 2))
-    lop = max(0.0, round(used - alloc, 2))
-    covered = min(used, alloc)
+
+    used_ytd_after = ytd_before + used
+    balance = max(0.0, round(alloc - used_ytd_after, 2))
+
+    remaining_at_month_start = max(0.0, round(alloc - ytd_before, 2))
+    covered = min(used, remaining_at_month_start)
+    # LOP is for the selected month only — days not covered by balance at month start.
+    month_lop = max(0.0, round(used - remaining_at_month_start, 2))
+
     return {
         "total_leave": alloc,
         "total_used_leave": round(used, 2),
+        "ytd_used_leave": round(used_ytd_after, 2),
         "balance_leave": balance,
-        "lop_days": lop,
+        "lop_days": month_lop,
         "leave_covered_days": round(covered, 2),
         "leave_exhausted": balance == 0 and alloc > 0 and used > 0,
     }
@@ -260,21 +270,31 @@ def list_leave_summary(
 
     balances_by_employee = {str(row.get("employee_id")): row for row in balances}
 
-    absent_used, period_cap = compute_absent_leave_used_by_employee(
+    emp_ids = set(employee_by_id.keys())
+    months_to_load = list(range(1, month + 1))
+    counts_by_month, period_by_month = compute_absent_leave_used_by_months(
         supabase,
-        set(employee_by_id.keys()),
-        month,
+        emp_ids,
+        months_to_load,
         year,
     )
+    month_counts = counts_by_month.get(month, {})
+    period_cap = period_by_month.get(month, {})
 
     output: List[Dict[str, Any]] = []
     for emp_id, employee in employee_by_id.items():
         emp_requests = requests_by_employee.get(emp_id, [])
         balance_row = balances_by_employee.get(emp_id)
         total_leave = get_allocated_total_leave(employee, balance_row)
+        month_used = float(month_counts.get(emp_id, 0))
+        ytd_before = sum(
+            float(counts_by_month.get(m, {}).get(emp_id, 0))
+            for m in range(1, month)
+        )
         snap = leave_month_balance_snapshot(
             total_leave=total_leave,
-            month_absent_days=float(absent_used.get(emp_id, 0)),
+            month_absent_days=month_used,
+            ytd_absent_before_month=ytd_before,
         )
         output.append(
             {
@@ -289,6 +309,8 @@ def list_leave_summary(
                 "total_leave": float(snap["total_leave"]),
                 "total_used_leave": float(snap["total_used_leave"]),
                 "total_used": float(snap["total_used_leave"]),
+                "ytd_used_before_month": ytd_before,
+                "ytd_used_leave": float(snap["ytd_used_leave"]),
                 "balance_leave": float(snap["balance_leave"]),
                 "lop_days": float(snap["lop_days"]),
                 "leave_covered_days": float(snap["leave_covered_days"]),

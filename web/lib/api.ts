@@ -3,11 +3,12 @@
 import { getStoredToken } from "@/lib/auth";
 import {
   DEFAULT_API_TIMEOUT_MS,
+  LEAVE_API_TIMEOUT_MS,
   PAYROLL_API_TIMEOUT_MS,
   fetchWithTimeout,
 } from "@/lib/apiFetchWithTimeout";
 
-export { PAYROLL_API_TIMEOUT_MS };
+export { LEAVE_API_TIMEOUT_MS, PAYROLL_API_TIMEOUT_MS };
 import { API_BASE, effectiveApiBase } from "@/lib/envApi";
 import { userFacingApiDetail } from "@/lib/userFacingError";
 

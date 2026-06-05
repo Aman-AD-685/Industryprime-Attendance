@@ -1,11 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import calendar
 from datetime import date
 from typing import Any, Dict, List
 
 from database.supabase_client import SupabaseRest, get_supabase
-from services.leave_balance_attendance_service import compute_absent_leave_used_by_employee
+from services.leave_balance_attendance_service import compute_absent_leave_used_by_months
 from services.leave_service import get_allocated_total_leave, leave_month_balance_snapshot
 from services.payroll_attendance_summary_service import compute_payroll_attendance_metrics
 from services.payroll_constants import PAYROLL_SALARY_DAYS_PER_MONTH
@@ -87,12 +87,13 @@ def summarize_payroll(
         month,
         year,
     )
-    leave_total_used_days, _ = compute_absent_leave_used_by_employee(
+    leave_counts_by_month, _ = compute_absent_leave_used_by_months(
         supabase,
         emp_id_set,
-        month,
+        list(range(1, month + 1)),
         year,
     )
+    leave_total_used_days = leave_counts_by_month.get(month, {})
     try:
         balance_rows = supabase.select(table="leave_balances", select="*", where_eq={"year": year})
     except Exception:
@@ -118,6 +119,12 @@ def summarize_payroll(
         leave_snap = leave_month_balance_snapshot(
             total_leave=total_leave,
             month_absent_days=float(absent),
+            ytd_absent_before_month=float(
+                sum(
+                    int(leave_counts_by_month.get(m, {}).get(emp_id, 0))
+                    for m in range(1, month)
+                )
+            ),
         )
         leave_covered_days = float(leave_snap["leave_covered_days"])
         lop_days = float(leave_snap["lop_days"])

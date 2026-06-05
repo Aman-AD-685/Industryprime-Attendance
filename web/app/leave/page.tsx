@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, LEAVE_API_TIMEOUT_MS } from "@/lib/api";
 import { getStoredUser, type AuthUser } from "@/lib/auth";
 
 type LeaveRequest = {
@@ -120,7 +120,11 @@ export default function LeavePage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiFetch<LeaveSummary[]>(`/leave/summary?year=${year}&month=${month}`);
+      const data = await apiFetch<LeaveSummary[]>(
+        `/leave/summary?year=${year}&month=${month}`,
+        undefined,
+        LEAVE_API_TIMEOUT_MS,
+      );
       setRows(data || []);
       setSelectedId((current) => current || data?.[0]?.employee.id || null);
     } catch (err) {
@@ -224,21 +228,8 @@ export default function LeavePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ year, total_leave: totalLeave }),
       });
-      setRows((items) =>
-        items.map((item) => {
-          if (item.employee.id !== row.employee.id) return item;
-          const used = item.total_used_leave;
-          const balanceLeave = Math.max(0, Math.round((totalLeave - used) * 100) / 100);
-          const lopDays = Math.max(0, Math.round((used - totalLeave) * 100) / 100);
-          return {
-            ...item,
-            total_leave: totalLeave,
-            balance_leave: balanceLeave,
-            lop_days: lopDays,
-            leave_exhausted: balanceLeave === 0 && totalLeave > 0 && used > 0,
-          };
-        })
-      );
+      // Balance Leave is "pending" (YTD remaining), so recalculate from backend.
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update leave allocation");
     } finally {
@@ -251,7 +242,9 @@ export default function LeavePage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Leave Management</h2>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Pick the allocation year and the month used to count absences.</p>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+            Total Used is for the selected month only. Balance Leave is pending after all prior months plus this month.
+          </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -358,9 +351,9 @@ export default function LeavePage() {
               <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{row.employee.email || "-"}</div>
               <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
                 <Metric label="Total Leave" value={row.total_leave} />
-                <Metric label="Total Used" value={row.total_used_leave} />
+                <Metric label="Total Used (month)" value={row.total_used_leave} />
                 <Metric
-                  label="Balance Leave"
+                  label="Balance Leave (pending)"
                   value={row.balance_leave}
                   strong
                   warn={Boolean(row.leave_exhausted) || (row.lop_days ?? 0) > 0}
@@ -398,9 +391,9 @@ export default function LeavePage() {
 
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             <Detail label="Total Leave" value={selected.total_leave} />
-            <Detail label="Total Used" value={selected.total_used_leave} />
+            <Detail label="Total Used (month)" value={selected.total_used_leave} />
             <Detail
-              label="Balance Leave"
+              label="Balance Leave (pending)"
               value={selected.balance_leave}
               highlight
               warn={Boolean(selected.leave_exhausted) || (selected.lop_days ?? 0) > 0}
