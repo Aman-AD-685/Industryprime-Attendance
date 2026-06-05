@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import calendar
-from typing import Any, Dict
+from datetime import date
+from typing import Any, Dict, Optional
 
 from fpdf import FPDF
 
@@ -25,6 +26,24 @@ def _rupees_minus(v: float | None, blank: bool) -> str:
     return f"- Rs.{abs(float(v)):,.2f}"
 
 
+def _format_days(v: float | None) -> str:
+    if v is None:
+        return "0 days"
+    n = float(v)
+    if n == int(n):
+        return f"{int(n)} days"
+    return f"{n:g} days"
+
+
+def _format_balance_leave(total_leave: float | None, balance_leave: float | None) -> str:
+    if total_leave is None or total_leave <= 0 or balance_leave is None:
+        return "- days"
+    n = float(balance_leave)
+    if n == int(n):
+        return f"{int(n)} days"
+    return f"{n:g} days"
+
+
 def build_payslip_pdf_bytes(
     employee: Dict[str, Any],
     *,
@@ -39,6 +58,9 @@ def build_payslip_pdf_bytes(
     monthly_salary: float,
     leave_covered_days: float = 0.0,
     lop_days: float = 0.0,
+    total_leave: Optional[float] = None,
+    balance_leave: Optional[float] = None,
+    period_end: Optional[date] = None,
 ) -> bytes:
     ps = compute_payslip(
         employee,
@@ -53,6 +75,7 @@ def build_payslip_pdf_bytes(
         monthly_salary=monthly_salary,
         leave_covered_days=leave_covered_days,
         lop_days=lop_days,
+        period_end=period_end,
     )
     disp = ps["display"]
     earn = ps["earnings"]
@@ -149,6 +172,36 @@ def build_payslip_pdf_bytes(
         pdf.set_font("Helvetica", "B", 6)
         pdf.cell(col_w, 5, lab, align="C", ln=False)
     pdf.set_y(y_att + 18)
+
+    # Leave balance row (3 columns)
+    paid_leave = float(leave_covered_days or ps.get("leave_covered_days") or 0)
+    lop_leave = float(lop_days or ps.get("lop_days") or 0)
+    balance_label = _format_balance_leave(total_leave, balance_leave)
+    y_leave = pdf.get_y()
+    pdf.set_fill_color(249, 250, 251)
+    pdf.rect(x0, y_leave, 186, 14, "FD")
+    leave_vals = [balance_label, _format_days(paid_leave), _format_days(lop_leave)]
+    leave_labels = ["BALANCE LEAVE", "ON LEAVE (PAID)", "LOP (SALARY CUT)"]
+    col_w3 = 186 / 3
+    for i, (lab, val) in enumerate(zip(leave_labels, leave_vals)):
+        x = x0 + i * col_w3
+        if i:
+            pdf.line(x, y_leave, x, y_leave + 14)
+        pdf.set_xy(x, y_leave + 2)
+        pdf.set_font("Helvetica", "B", 6)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(col_w3, 4, lab, align="C", ln=False)
+        pdf.set_xy(x, y_leave + 7)
+        pdf.set_font("Helvetica", "B", 9)
+        if lab == "ON LEAVE (PAID)":
+            pdf.set_text_color(4, 120, 87)
+        elif lab == "LOP (SALARY CUT)":
+            pdf.set_text_color(220, 38, 38)
+        else:
+            pdf.set_text_color(0, 0, 0)
+        pdf.cell(col_w3, 6, val, align="C", ln=False)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_y(y_leave + 16)
 
     # Two columns earnings / deductions
     pdf.set_font("Helvetica", "B", 8)

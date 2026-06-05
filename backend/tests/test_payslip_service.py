@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from services.payslip_service import compute_payslip
 
 
@@ -123,3 +125,60 @@ def test_payslip_blank_statutory_lines() -> None:
     assert ps["deductions"]["professional_tax"] is None
     assert ps["deductions"]["total"] == 0.0
     assert ps["net_pay"] == ps["earnings"]["gross_earned"]
+
+
+def test_gross_earned_prorated_for_in_progress_month() -> None:
+    """June 18 → earnings accrue 18/30 of full monthly gross."""
+    employee = {
+        "hra_monthly": None,
+        "conveyance_monthly": None,
+        "special_allowance_monthly": 299.0,
+        "pf_employee_monthly": None,
+        "income_tax_tds_monthly": None,
+        "professional_tax": 130.0,
+    }
+    ps = compute_payslip(
+        employee,
+        month=6,
+        year=2026,
+        calendar_days=30,
+        present_days=3,
+        absent_attendance_days=4,
+        weekoff_days=2,
+        holiday_days=0,
+        salary_eligible_days=5,
+        monthly_salary=21_000.0,
+        lop_days=0,
+        period_end=date(2026, 6, 18),
+    )
+    assert ps["earnings_elapsed_factor"] == 0.6
+    assert ps["earnings"]["salary"] == 12_600.0
+    assert ps["earnings"]["special_allowance"] == 299.0
+    assert ps["earnings"]["gross_earned"] == 12_899.0
+    assert ps["net_pay"] == 12_769.0
+
+
+def test_gross_earned_full_when_month_complete() -> None:
+    employee = {
+        "hra_monthly": None,
+        "conveyance_monthly": None,
+        "special_allowance_monthly": 299.0,
+        "pf_employee_monthly": None,
+        "income_tax_tds_monthly": None,
+        "professional_tax": 130.0,
+    }
+    ps = compute_payslip(
+        employee,
+        month=5,
+        year=2026,
+        calendar_days=30,
+        present_days=23,
+        absent_attendance_days=0,
+        weekoff_days=5,
+        holiday_days=0,
+        salary_eligible_days=28,
+        monthly_salary=21_000.0,
+        lop_days=0,
+        period_end=date(2026, 5, 31),
+    )
+    assert ps["earnings"]["gross_earned"] == 21_299.0

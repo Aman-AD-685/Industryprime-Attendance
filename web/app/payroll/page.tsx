@@ -105,6 +105,12 @@ type PayrollItem = {
   payslip: Payslip;
 };
 
+function displayBalanceLeave(totalLeave: number | null | undefined, balanceLeave: number | null | undefined): string | number {
+  if (totalLeave == null || totalLeave <= 0) return "—";
+  if (balanceLeave == null) return "—";
+  return balanceLeave;
+}
+
 function money(value: number | null | undefined, blank: boolean) {
   if (blank || value === null || value === undefined) return "—";
   return `₹${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -258,22 +264,22 @@ function PayslipDocument({
         ))}
       </div>
 
-      {(item.leave?.balance_leave != null || (ps.leave_covered_days ?? 0) > 0) && (
-        <div className="grid grid-cols-3 gap-3 border-b border-zinc-200 bg-zinc-50 px-5 py-3 text-sm">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">Balance leave</div>
-            <div className="font-semibold text-zinc-900">{item.leave?.balance_leave ?? "—"} days</div>
-          </div>
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">On leave (paid)</div>
-            <div className="font-semibold text-emerald-700">{ps.leave_covered_days ?? item.leave?.leave_covered_days ?? 0} days</div>
-          </div>
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">LOP (salary cut)</div>
-            <div className="font-semibold text-red-600">{ps.lop_days ?? item.leave?.lop_days ?? 0} days</div>
+      <div className="grid grid-cols-3 gap-3 border-b border-zinc-200 bg-zinc-50 px-5 py-3 text-sm">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">Balance leave</div>
+          <div className="font-semibold text-zinc-900">
+            {displayBalanceLeave(item.leave?.total_leave, item.leave?.balance_leave)} days
           </div>
         </div>
-      )}
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">On leave (paid)</div>
+          <div className="font-semibold text-emerald-700">{ps.leave_covered_days ?? item.leave?.leave_covered_days ?? 0} days</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">LOP (salary cut)</div>
+          <div className="font-semibold text-red-600">{ps.lop_days ?? item.leave?.lop_days ?? 0} days</div>
+        </div>
+      </div>
 
       {/* Earnings | Deductions */}
       <div className="grid border-b border-zinc-200 bg-white sm:grid-cols-2">
@@ -534,7 +540,7 @@ export default function PayrollPage() {
                 <Metric tint="weekoff" label="Weekoff" value={item.weekoff_days ?? item.total_sundays ?? 0} />
                 <Metric tint="holiday" label="Holiday" value={item.holiday_days ?? item.holidays ?? 0} />
                 <Metric tint="salary" label="Salary days" value={item.salary_eligible_days ?? item.total_days_present} />
-                <Metric label="Balance leave" value={item.leave?.balance_leave ?? "—"} />
+                <Metric label="Balance leave" value={displayBalanceLeave(item.leave?.total_leave, item.leave?.balance_leave)} />
                 <Metric tint="absent" label="LOP days" value={item.lop_days ?? item.leave?.lop_days ?? 0} />
                 <Metric label="Hours" value={item.total_hours_in_office} />
               </div>

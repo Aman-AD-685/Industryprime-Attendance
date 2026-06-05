@@ -77,6 +77,17 @@ def payroll_payslip_pdf(
         monthly_salary=float(emp.get("salary_monthly") or 0),
         leave_covered_days=float(item.get("leave_covered_days") or item.get("leave", {}).get("leave_covered_days") or 0),
         lop_days=float(item.get("lop_days") or item.get("leave", {}).get("lop_days") or 0),
+        total_leave=float(item.get("leave", {}).get("total_leave") or 0) or None,
+        balance_leave=(
+            float(item["leave"]["balance_leave"])
+            if item.get("leave", {}).get("balance_leave") is not None
+            else None
+        ),
+        period_end=(
+            date.fromisoformat(str(item["attendance_period_end"])[:10])
+            if item.get("attendance_period_end")
+            else None
+        ),
     )
     code = str(emp.get("employee_code") or "employee").replace(" ", "_")
     fname = f"payslip-{code}-{year}-{month:02d}.pdf"

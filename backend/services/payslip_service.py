@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import calendar
+from datetime import date
 from typing import Any, Dict, Optional
 
 
@@ -10,6 +12,28 @@ def _f(v: Any) -> Optional[float]:
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _month_elapsed_factor(
+    month: int,
+    year: int,
+    calendar_days: int,
+    period_end: Optional[date],
+) -> float:
+    """
+    For the current (in-progress) month, earnings accrue only through ``period_end``.
+    Uses day-of-month / 30-day salary basis (e.g. June 18 → 18/30).
+    Completed months (period_end on or after month end) use factor 1.0.
+    """
+    if period_end is None:
+        return 1.0
+    month_end = date(year, month, calendar.monthrange(year, month)[1])
+    if period_end >= month_end:
+        return 1.0
+    if period_end.year != year or period_end.month != month:
+        return 1.0
+    denom = max(int(calendar_days or 0), 1)
+    return max(0.0, min(1.0, float(period_end.day) / float(denom)))
 
 
 def compute_payslip(
@@ -26,23 +50,30 @@ def compute_payslip(
     monthly_salary: float,
     leave_covered_days: float = 0.0,
     lop_days: float = 0.0,
+    period_end: Optional[date] = None,
 ) -> Dict[str, Any]:
     """
     Build payslip numbers for one calendar month.
 
-    Earnings show **full monthly** Salary / HRA / Conveyance / Mobile (not attendance-prorated).
-    Loss-of-pay (LOP) days reduce pay via an explicit **LOP deduction** line, not by shrinking
-    the Salary earnings row.
+    Earnings show full monthly Salary / HRA / Conveyance / Mobile when the month is
+    complete. For an in-progress month (``period_end`` before month end), Salary / HRA /
+    Conveyance and **Gross earned** (excluding mobile) are prorated by days reached /
+    ``calendar_days`` (30). **Mobile allowance** is always the full monthly amount
+    (1st through month end), never day-prorated.
+
+    Loss-of-pay (LOP) days reduce pay via an explicit **LOP deduction** line, not by
+    shrinking the Salary earnings row.
 
     Example (no LOP): salary 21,000 + mobile 299 − professional tax 130 = net 21,169.
 
-    `calendar_days` is the per-day rate denominator (IndustryPrime policy: 30).
+    ``calendar_days`` is the per-day rate denominator (IndustryPrime policy: 30).
     PF and TDS scale by paid days: (calendar_days − lop_days) / calendar_days.
     Professional tax is always the full monthly amount when set.
     """
     cal_days = max(int(calendar_days or 0), 1)
     lop_days_f = max(0.0, float(lop_days or 0))
     paid_factor = max(0.0, (float(cal_days) - lop_days_f) / float(cal_days))
+    elapsed_factor = _month_elapsed_factor(month, year, cal_days, period_end)
 
     monthly_full = max(float(monthly_salary or 0), 0.0)
     hra_m = _f(employee.get("hra_monthly"))
@@ -58,13 +89,25 @@ def compute_payslip(
     def paid_prorate(amt: float) -> float:
         return round(float(amt) * paid_factor, 2)
 
-    # Full monthly earnings (IndustryPrime payslip display).
-    salary_earned = round(base_monthly, 2)
-    hra_e = round(hra, 2) if hra_m is not None else None
-    conv_e = round(conv, 2) if conv_m is not None else None
+    def elapsed_prorate(amt: float) -> float:
+        return round(float(amt) * elapsed_factor, 2)
+
+    salary_full = round(base_monthly, 2)
+    hra_full = round(hra, 2) if hra_m is not None else None
+    conv_full = round(conv, 2) if conv_m is not None else None
     mobile_full = round(float(spec), 2) if spec_m is not None else 0.0
-    spec_e = mobile_full if spec_m is not None else None
-    gross_earned = round(base_monthly + hra + conv + mobile_full, 2)
+    spec_full = mobile_full if spec_m is not None else None
+
+    salary_earned = elapsed_prorate(salary_full)
+    hra_e = elapsed_prorate(hra_full) if hra_full is not None else None
+    conv_e = elapsed_prorate(conv_full) if conv_full is not None else None
+    # Mobile allowance: full month always (IndustryPrime policy — not day-prorated).
+    spec_e = spec_full
+    prorated_gross = round(
+        salary_earned + (hra_e or 0.0) + (conv_e or 0.0),
+        2,
+    )
+    gross_earned = round(prorated_gross + (spec_e or 0.0), 2)
 
     pf_raw = _f(employee.get("pf_employee_monthly"))
     pt_raw = _f(employee.get("professional_tax"))
@@ -99,6 +142,7 @@ def compute_payslip(
         "salary_eligible_days": round(float(salary_eligible_days or 0), 2),
         "paid_salary_days": paid_salary_days,
         "proration_factor": round(paid_factor, 6),
+        "earnings_elapsed_factor": round(elapsed_factor, 6),
         "monthly_salary": monthly_full,
         "earnings": {
             "salary": salary_earned,

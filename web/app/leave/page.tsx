@@ -56,6 +56,16 @@ function formatAllocationYearMonth(y: number, m: number) {
   return new Date(y, m - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
 }
 
+function displayBalanceLeave(totalLeave: number | null | undefined, balanceLeave: number | null | undefined): string | number {
+  if (totalLeave == null || totalLeave <= 0) return "—";
+  if (balanceLeave == null) return "—";
+  return balanceLeave;
+}
+
+function hasBalanceLeaveAllocation(totalLeave: number | null | undefined, balanceLeave: number | null | undefined): boolean {
+  return (totalLeave ?? 0) > 0 && balanceLeave != null;
+}
+
 function leaveStatusBadge(status: string) {
   const s = status.toLowerCase();
   if (s === "approved")
@@ -354,9 +364,12 @@ export default function LeavePage() {
                 <Metric label="Total Used (month)" value={row.total_used_leave} />
                 <Metric
                   label="Balance Leave"
-                  value={row.balance_leave}
-                  strong
-                  warn={Boolean(row.leave_exhausted) || (row.lop_days ?? 0) > 0}
+                  value={displayBalanceLeave(row.total_leave, row.balance_leave)}
+                  strong={hasBalanceLeaveAllocation(row.total_leave, row.balance_leave)}
+                  warn={
+                    hasBalanceLeaveAllocation(row.total_leave, row.balance_leave) &&
+                    (Boolean(row.leave_exhausted) || (row.lop_days ?? 0) > 0)
+                  }
                 />
               </div>
               <LeaveDeductionBadges row={row} />
@@ -394,9 +407,12 @@ export default function LeavePage() {
             <Detail label="Total Used (month)" value={selected.total_used_leave} />
             <Detail
               label="Balance Leave"
-              value={selected.balance_leave}
-              highlight
-              warn={Boolean(selected.leave_exhausted) || (selected.lop_days ?? 0) > 0}
+              value={displayBalanceLeave(selected.total_leave, selected.balance_leave)}
+              highlight={hasBalanceLeaveAllocation(selected.total_leave, selected.balance_leave)}
+              warn={
+                hasBalanceLeaveAllocation(selected.total_leave, selected.balance_leave) &&
+                (Boolean(selected.leave_exhausted) || (selected.lop_days ?? 0) > 0)
+              }
             />
           </div>
           {selected.attendance_period_end ? (

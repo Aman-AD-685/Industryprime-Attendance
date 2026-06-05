@@ -141,6 +141,14 @@ def summarize_payroll(
         divisor = float(salary_basis_days)
         salary_per_day = round(monthly_salary / divisor, 2) if divisor else 0
 
+        period_end_raw = m.get("attendance_period_end")
+        period_end: date | None = None
+        if period_end_raw:
+            try:
+                period_end = date.fromisoformat(str(period_end_raw)[:10])
+            except ValueError:
+                period_end = None
+
         payslip = compute_payslip(
             employee,
             month=month,
@@ -154,6 +162,7 @@ def summarize_payroll(
             monthly_salary=monthly_salary,
             leave_covered_days=leave_covered_days,
             lop_days=lop_days,
+            period_end=period_end,
         )
 
         payable = float(payslip.get("net_pay") or 0)
