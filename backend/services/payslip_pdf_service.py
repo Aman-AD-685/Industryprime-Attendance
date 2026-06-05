@@ -37,6 +37,8 @@ def build_payslip_pdf_bytes(
     holiday_days: int,
     salary_eligible_days: float,
     monthly_salary: float,
+    leave_covered_days: float = 0.0,
+    lop_days: float = 0.0,
 ) -> bytes:
     ps = compute_payslip(
         employee,
@@ -49,6 +51,8 @@ def build_payslip_pdf_bytes(
         holiday_days=holiday_days,
         salary_eligible_days=salary_eligible_days,
         monthly_salary=monthly_salary,
+        leave_covered_days=leave_covered_days,
+        lop_days=lop_days,
     )
     disp = ps["display"]
     earn = ps["earnings"]
@@ -160,6 +164,14 @@ def build_payslip_pdf_bytes(
             "Mobile allowance",
             earn["special_allowance"],
             disp["special_allowance_blank"],
+            "LOP deduction",
+            ded.get("lop_deduction"),
+            disp.get("lop_blank", True),
+        ),
+        (
+            "",
+            None,
+            True,
             "Late deduction",
             ded["late_deduction"],
             disp["late_blank"],

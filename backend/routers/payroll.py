@@ -70,11 +70,13 @@ def payroll_payslip_pdf(
         year=int(item["year"]),
         calendar_days=int(item["total_days"]),
         present_days=int(item["total_days_present"]),
-        absent_attendance_days=int(item.get("attendance_absent_days") or 0),
+        absent_attendance_days=int(item.get("total_days_absent") or item.get("attendance_absent_days") or 0),
         weekoff_days=int(item.get("weekoff_days") or 0),
         holiday_days=int(item.get("holiday_days") or 0),
         salary_eligible_days=float(item.get("salary_eligible_days") or 0),
         monthly_salary=float(emp.get("salary_monthly") or 0),
+        leave_covered_days=float(item.get("leave_covered_days") or item.get("leave", {}).get("leave_covered_days") or 0),
+        lop_days=float(item.get("lop_days") or item.get("leave", {}).get("lop_days") or 0),
     )
     code = str(emp.get("employee_code") or "employee").replace(" ", "_")
     fname = f"payslip-{code}-{year}-{month:02d}.pdf"

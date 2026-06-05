@@ -40,6 +40,34 @@ def get_allocated_total_leave(employee: Dict[str, Any], balance_row: Optional[Di
     return _total_leave_for_employee(employee, balance_row)
 
 
+def leave_month_balance_snapshot(
+    *,
+    total_leave: float,
+    month_absent_days: float,
+) -> Dict[str, float | bool]:
+    """
+    Leave page + payroll use the same monthly snapshot for the selected year/month.
+
+    - total_used_leave = absent days in that month (attendance status A)
+    - balance_leave = total_leave − month_absent_days (floored at 0)
+    - lop_days = absents beyond allocation this month
+    - leave_covered_days = min(month_absents, total_leave) — no salary LOP for these days
+    """
+    used = max(0.0, float(month_absent_days))
+    alloc = max(0.0, float(total_leave))
+    balance = max(0.0, round(alloc - used, 2))
+    lop = max(0.0, round(used - alloc, 2))
+    covered = min(used, alloc)
+    return {
+        "total_leave": alloc,
+        "total_used_leave": round(used, 2),
+        "balance_leave": balance,
+        "lop_days": lop,
+        "leave_covered_days": round(covered, 2),
+        "leave_exhausted": balance == 0 and alloc > 0 and used > 0,
+    }
+
+
 def _is_missing_days_column(exc: Exception) -> bool:
     msg = str(exc).lower()
     return "leave_requests" in msg and "days" in msg and ("schema cache" in msg or "could not find" in msg)
@@ -244,11 +272,10 @@ def list_leave_summary(
         emp_requests = requests_by_employee.get(emp_id, [])
         balance_row = balances_by_employee.get(emp_id)
         total_leave = get_allocated_total_leave(employee, balance_row)
-        total_used = float(absent_used.get(emp_id, 0))
-        raw_balance = float(total_leave) - total_used
-        balance_leave = max(0.0, round(raw_balance, 2))
-        lop_days = max(0.0, round(total_used - float(total_leave), 2))
-        leave_exhausted = balance_leave == 0 and float(total_leave) > 0 and total_used > 0
+        snap = leave_month_balance_snapshot(
+            total_leave=total_leave,
+            month_absent_days=float(absent_used.get(emp_id, 0)),
+        )
         output.append(
             {
                 "employee": {
@@ -259,12 +286,13 @@ def list_leave_summary(
                 },
                 "year": year,
                 "month": month,
-                "total_leave": total_leave,
-                "total_used_leave": total_used,
-                "total_used": total_used,
-                "balance_leave": balance_leave,
-                "lop_days": lop_days,
-                "leave_exhausted": leave_exhausted,
+                "total_leave": float(snap["total_leave"]),
+                "total_used_leave": float(snap["total_used_leave"]),
+                "total_used": float(snap["total_used_leave"]),
+                "balance_leave": float(snap["balance_leave"]),
+                "lop_days": float(snap["lop_days"]),
+                "leave_covered_days": float(snap["leave_covered_days"]),
+                "leave_exhausted": bool(snap["leave_exhausted"]),
                 "attendance_period_end": period_cap.get(emp_id),
                 "requests": emp_requests,
             }

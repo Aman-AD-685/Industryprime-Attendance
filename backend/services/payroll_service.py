@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from database.supabase_client import SupabaseRest, get_supabase
 from services.leave_balance_attendance_service import compute_absent_leave_used_by_employee
+from services.leave_service import get_allocated_total_leave, leave_month_balance_snapshot
 from services.payroll_attendance_summary_service import compute_payroll_attendance_metrics
 from services.payroll_constants import PAYROLL_SALARY_DAYS_PER_MONTH
 from services.payslip_service import compute_payslip
@@ -92,7 +93,6 @@ def summarize_payroll(
         month,
         year,
     )
-
     try:
         balance_rows = supabase.select(table="leave_balances", select="*", where_eq={"year": year})
     except Exception:
@@ -104,24 +104,29 @@ def summarize_payroll(
     for emp_id, employee in employee_by_id.items():
         m = metrics_by_eid.get(emp_id, {})
         present = int(m.get("present_days") or 0)
-        absent_attendance = int(m.get("absent_days") or 0)
-        # Same absent-day count as Leave "Total Used" (attendance‑based via leave_balance_attendance_service).
+        metrics_absent = int(m.get("absent_days") or 0)
+        # Canonical absent = Leave "Total Used" (status A, matches attendance grid / leave page).
         absent = int(leave_total_used_days.get(emp_id, 0))
         weekoff_days = int(m.get("weekoff_days") or 0)
         holiday_days = int(m.get("holiday_days") or 0)
-        salary_eligible_days = float(m.get("salary_eligible_days") or 0)
+        base_salary_eligible = float(m.get("salary_eligible_days") or 0)
         total_minutes = int(m.get("total_working_minutes") or 0)
         total_hours = minutes_to_hhmm_float(total_minutes)
+
+        balance_row = balances_by_employee.get(emp_id)
+        total_leave = get_allocated_total_leave(employee, balance_row)
+        leave_snap = leave_month_balance_snapshot(
+            total_leave=total_leave,
+            month_absent_days=float(absent),
+        )
+        leave_covered_days = float(leave_snap["leave_covered_days"])
+        lop_days = float(leave_snap["lop_days"])
+        balance_leave = float(leave_snap["balance_leave"])
+        month_used_leave = float(leave_snap["total_used_leave"])
 
         monthly_salary = float(employee.get("salary_monthly") or 0)
         divisor = float(salary_basis_days)
         salary_per_day = round(monthly_salary / divisor, 2) if divisor else 0
-        payable = round(salary_per_day * salary_eligible_days, 2)
-        deductions = max(0.0, round(monthly_salary - payable, 2))
-
-        used_leave = round(float(absent), 2)
-        balance = balances_by_employee.get(emp_id) or {}
-        total_leave = float(balance.get("total_leave") or 0)
 
         payslip = compute_payslip(
             employee,
@@ -129,12 +134,19 @@ def summarize_payroll(
             year=year,
             calendar_days=salary_basis_days,
             present_days=present,
-            absent_attendance_days=absent_attendance,
+            absent_attendance_days=absent,
             weekoff_days=weekoff_days,
             holiday_days=holiday_days,
-            salary_eligible_days=salary_eligible_days,
+            salary_eligible_days=base_salary_eligible,
             monthly_salary=monthly_salary,
+            leave_covered_days=leave_covered_days,
+            lop_days=lop_days,
         )
+
+        payable = float(payslip.get("net_pay") or 0)
+        gross_earned = float((payslip.get("earnings") or {}).get("gross_earned") or 0)
+        deductions = max(0.0, round(gross_earned - payable, 2))
+        display_salary_days = float(payslip.get("paid_salary_days") or base_salary_eligible)
 
         summaries.append(
             {
@@ -160,10 +172,12 @@ def summarize_payroll(
                 "salary_basis_days": salary_basis_days,
                 "total_days_present": present,
                 "total_days_absent": absent,
-                "attendance_absent_days": absent_attendance,
+                "attendance_absent_days": metrics_absent,
                 "weekoff_days": weekoff_days,
                 "holiday_days": holiday_days,
-                "salary_eligible_days": salary_eligible_days,
+                "salary_eligible_days": display_salary_days,
+                "leave_covered_days": leave_covered_days,
+                "lop_days": lop_days,
                 "attendance_period_end": m.get("attendance_period_end"),
                 "total_hours_in_office": total_hours,
                 "total_sundays": weekoff_days,
@@ -174,8 +188,12 @@ def summarize_payroll(
                 "final_payable_amount": payable,
                 "leave": {
                     "total_leave": total_leave,
-                    "total_used_leave": used_leave,
-                    "balance_leave": round(total_leave - used_leave, 2),
+                    "total_used_leave": month_used_leave,
+                    "month_used_leave": month_used_leave,
+                    "balance_leave": balance_leave,
+                    "leave_covered_days": leave_covered_days,
+                    "lop_days": lop_days,
+                    "leave_exhausted": bool(leave_snap["leave_exhausted"]),
                 },
                 "payslip": payslip,
             }
