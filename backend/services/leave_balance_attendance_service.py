@@ -83,12 +83,16 @@ def _ot_sf_indicates_absent(fs: Any) -> bool:
 
 
 def _is_absent_status(row: Dict[str, Any]) -> bool:
-    # Primary: raw attendance status.
-    if str(row.get("status") or "").strip().upper() == "A":
-        return True
+    # Mirror payroll behavior:
+    # - If OT/SF or final_status explicitly says Absent → absent.
+    # - If OT/SF/final_status is explicitly set and does NOT say Absent → not absent.
+    # - Only when OT/SF/final_status is missing do we fall back to raw `status == 'A'`.
+    fs = row.get("final_status") or row.get("status_ot_sf")
+    tl = str(fs or "").strip()
+    if tl:
+        return _ot_sf_indicates_absent(tl)
 
-    # Fallback: OT/SF (authoritative present/absent classification).
-    return _ot_sf_indicates_absent(row.get("final_status") or row.get("status_ot_sf"))
+    return str(row.get("status") or "").strip().upper() == "A"
 
 
 def _fetch_attendance_month_slice(
