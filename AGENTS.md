@@ -15,7 +15,10 @@ Do not push on P0 / security findings unless user writes: `push despite critical
 
 After push: merge **`publish-main` → `main`** (Vercel); redeploy **Render** if `backend/` changed.
 
-Optional git hook: `install-pre-push-hook.ps1`
+Optional git hooks:
+- PowerShell: `install-pre-push-hook.ps1` (Vivid Doctor audit)
+- Shell (login Vitest + tsc): `sh hooks/install.sh` → `.git/hooks/pre-push`
+- Auth regression: `cd web && npm run test:auth`
 
 ## Stack
 

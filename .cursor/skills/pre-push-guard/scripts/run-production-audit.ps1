@@ -85,6 +85,19 @@ try {
 }
 Pop-Location
 
+# --- FE-AUTH: Login auth Vitest (cookie/redirect race regression) ---
+Push-Location (Join-Path $repoRoot "web")
+try {
+  $authOut = & npx vitest run tests/auth.test.ts --reporter=dot 2>&1
+  $authExit = $LASTEXITCODE
+  $authSummary = ($authOut | Select-Object -Last 5) -join " "
+  if ($authExit -eq 0) { Add-Result "FE-AUTH" "Auth Vitest (login redirect)" "PASS" $authSummary $true }
+  else { Add-Result "FE-AUTH" "Auth Vitest (login redirect)" "FAIL" $authSummary $true }
+} catch {
+  Add-Result "FE-AUTH" "Auth Vitest (login redirect)" "FAIL" $_.Exception.Message $true
+}
+Pop-Location
+
 # --- FE-BUILD ---
 Push-Location (Join-Path $repoRoot "web")
 try {

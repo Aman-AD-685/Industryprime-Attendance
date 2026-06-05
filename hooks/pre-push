@@ -1,0 +1,53 @@
+#!/usr/bin/env sh
+# IndustryPrime-Attendance — pre-push gate (TypeScript + auth Vitest + optional ruff)
+set -e
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+YELLOW='\033[33m'
+GREEN='\033[32m'
+RED='\033[31m'
+RESET='\033[0m'
+
+step() {
+  printf '%b\n' "${YELLOW}▶ $1${RESET}"
+}
+
+pass() {
+  printf '%b\n' "${GREEN}✓ $1${RESET}"
+}
+
+fail() {
+  printf '%b\n' "${RED}✗ $1${RESET}"
+}
+
+step "TypeScript check (web/)"
+if (cd "$ROOT/web" && npx tsc --noEmit); then
+  pass "TypeScript check passed"
+else
+  fail "TypeScript check failed"
+  exit 1
+fi
+
+step "Auth Vitest suite (web/tests/auth.test.ts)"
+if (cd "$ROOT/web" && npx vitest run tests/auth.test.ts --reporter=verbose); then
+  pass "Auth Vitest suite passed"
+else
+  fail "Auth Vitest suite failed"
+  exit 1
+fi
+
+if command -v ruff >/dev/null 2>&1 && [ -d "$ROOT/backend" ]; then
+  step "Ruff lint (backend/, E/F rules)"
+  if ruff check "$ROOT/backend/" --select=E,F --quiet; then
+    pass "Ruff lint passed"
+  else
+    fail "Ruff lint failed"
+    exit 1
+  fi
+else
+  step "Ruff not installed or backend/ missing — skipping"
+fi
+
+printf '%b\n' "${GREEN}All pre-push checks passed${RESET}"
+exit 0

@@ -48,7 +48,9 @@ export default function LoginPage() {
     setInfo(null);
     try {
       const signedIn = await login(emailTrim, password);
-      router.replace(dashboardPathForRole(signedIn.role));
+      const destination = dashboardPathForRole(signedIn.role);
+      await Promise.resolve();
+      router.replace(destination);
     } catch (err) {
       if (redirectAfterAuth()) return;
       setError(errorMessageForUser(err, "Sign-in did not complete. Please try again."));

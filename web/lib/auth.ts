@@ -26,9 +26,11 @@ type SignupStartResponse = {
   signup_ticket?: string;
 };
 
-const TOKEN_KEY = "industryprime.authToken";
-const USER_KEY = "industryprime.authUser";
-const COOKIE_NAME = "industryprime_token";
+export const TOKEN_KEY = "industryprime.authToken";
+export const USER_KEY = "industryprime.authUser";
+export const COOKIE_NAME = "industryprime_token";
+export const SESSION_TIMESTAMP_KEY = "industryprime.sessionTimestamp";
+/** @deprecated Legacy key — cleared on logout for migration */
 const SESSION_CHECKED_AT_KEY = "industryprime.sessionCheckedAt";
 
 /** Abort hung API calls so refresh never spins forever (esp. offline / wrong NEXT_PUBLIC_API_URL). */
@@ -68,7 +70,9 @@ function authFetchTimeoutMs(path: string): number {
 export function isSessionFresh(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    const raw = window.localStorage.getItem(SESSION_CHECKED_AT_KEY);
+    const raw =
+      window.localStorage.getItem(SESSION_TIMESTAMP_KEY) ??
+      window.localStorage.getItem(SESSION_CHECKED_AT_KEY);
     if (!raw) return false;
     const t = Number(raw);
     return Number.isFinite(t) && Date.now() - t < SESSION_TTL_MS;
@@ -80,7 +84,7 @@ export function isSessionFresh(): boolean {
 export function markSessionFresh(): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(SESSION_CHECKED_AT_KEY, String(Date.now()));
+    window.localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
   } catch {
     /* ignore */
   }
@@ -203,17 +207,19 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
-export function storeAuth(token: string, user: AuthUser) {
+export async function storeAuth(token: string, user: AuthUser): Promise<void> {
   window.localStorage.setItem(TOKEN_KEY, token);
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
-  markSessionFresh();
+  window.localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
   setCookie(COOKIE_NAME, token, 60 * 60 * 8);
+  await Promise.resolve();
   window.dispatchEvent(new Event("industryprime-auth-change"));
 }
 
-export function clearAuth() {
+export function clearAuth(): void {
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
+  window.localStorage.removeItem(SESSION_TIMESTAMP_KEY);
   window.localStorage.removeItem(SESSION_CHECKED_AT_KEY);
   clearCookie(COOKIE_NAME);
   window.dispatchEvent(new Event("industryprime-auth-change"));
@@ -222,8 +228,10 @@ export function clearAuth() {
 /** One in-flight login per email — prevents double-click / multi-submit races and rate-limit spikes. */
 let loginInFlight: { key: string; promise: Promise<AuthUser> } | null = null;
 
-export function dashboardPathForRole(role: Role): string {
-  return role === "user" ? "/dashboard/user" : "/dashboard";
+export function dashboardPathForRole(role: Role | string): string {
+  if (role === "user") return "/dashboard/user";
+  if (role === "admin" || role === "master_admin") return "/dashboard";
+  return "/login";
 }
 
 export async function login(email: string, password: string): Promise<AuthUser> {
@@ -244,7 +252,7 @@ export async function login(email: string, password: string): Promise<AuthUser> 
         ),
       );
     }
-    storeAuth(data.access_token, data.user);
+    await storeAuth(data.access_token, data.user);
     return data.user;
   })();
 
@@ -288,7 +296,7 @@ export async function signupVerify(
   if (!data?.access_token || !data?.user) {
     throw new Error("Signup verification response missing token or user profile.");
   }
-  storeAuth(data.access_token, data.user);
+  await storeAuth(data.access_token, data.user);
   return data.user;
 }
 
