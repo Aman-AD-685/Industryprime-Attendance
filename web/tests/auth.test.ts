@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   COOKIE_NAME,
+  SESSION_COOKIE,
   SESSION_TIMESTAMP_KEY,
   TOKEN_KEY,
   USER_KEY,
@@ -49,28 +50,47 @@ async function loadAuthModule() {
 /** Mirrors login page submit handler — hard navigation after login() resolves. */
 async function loginPageSubmit(
   auth: Awaited<ReturnType<typeof loadAuthModule>>,
-  location: { replace: (path: string) => void },
+  location: { assign: (path: string) => void },
   email: string,
   password: string,
 ) {
   const signedIn = await auth.login(email, password);
-  auth.navigateAfterAuth(auth.dashboardPathForRole(signedIn.role));
-  void location.replace;
+  auth.navigateAfterAuth(auth.dashboardPathForRole(signedIn.role), { force: true });
+  void location.assign;
 }
 
 describe("auth login flow", () => {
-  const locationReplace = vi.fn();
+  const locationAssign = vi.fn();
+  const locationHrefSetter = vi.fn();
 
   beforeEach(() => {
     vi.resetModules();
     localStorage.clear();
     clearAllCookies();
-    locationReplace.mockReset();
+    locationAssign.mockReset();
+    locationHrefSetter.mockReset();
     vi.stubGlobal("fetch", vi.fn());
     vi.stubGlobal("location", {
-      replace: locationReplace,
+      assign: locationAssign,
+      replace: vi.fn(),
+      pathname: "/login",
       href: "http://localhost/login",
-      assign: vi.fn(),
+    });
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        assign: locationAssign,
+        replace: vi.fn(),
+        get pathname() {
+          return "/login";
+        },
+        set href(v: string) {
+          locationHrefSetter(v);
+        },
+        get href() {
+          return "http://localhost/login";
+        },
+      },
     });
   });
 
@@ -89,19 +109,20 @@ describe("auth login flow", () => {
 
     let tokenAtRedirect: string | null = null;
     let cookieAtRedirect: string | null = null;
-    locationReplace.mockImplementation(() => {
+    locationAssign.mockImplementation(() => {
       tokenAtRedirect = localStorage.getItem(TOKEN_KEY);
       cookieAtRedirect = readCookie(COOKIE_NAME);
     });
 
     await auth.login("test@company.com", "password123");
-    auth.navigateAfterAuth(auth.dashboardPathForRole("admin"));
+    auth.navigateAfterAuth("/dashboard", { force: true });
 
     expect(tokenAtRedirect).toBe("jwt-token-abc");
     expect(cookieAtRedirect).toBe("jwt-token-abc");
+    expect(readCookie(SESSION_COOKIE)).toBe("1");
     expect(localStorage.getItem(USER_KEY)).toBe(JSON.stringify(payload.user));
-    expect(locationReplace).toHaveBeenCalledOnce();
-    expect(locationReplace).toHaveBeenCalledWith("/dashboard");
+    expect(locationAssign).toHaveBeenCalledOnce();
+    expect(locationAssign).toHaveBeenCalledWith("/dashboard");
   });
 
   it("Scenario 2 — role redirects", async () => {
@@ -123,11 +144,11 @@ describe("auth login flow", () => {
       }),
     );
 
-    await expect(loginPageSubmit(auth, { replace: locationReplace }, "bad@company.com", "wrongpass1")).rejects.toThrow();
+    await expect(loginPageSubmit(auth, { assign: locationAssign }, "bad@company.com", "wrongpass1")).rejects.toThrow();
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(localStorage.getItem(USER_KEY)).toBeNull();
     expect(readCookie(COOKIE_NAME)).toBeNull();
-    expect(locationReplace).not.toHaveBeenCalled();
+    expect(locationAssign).not.toHaveBeenCalled();
   });
 
   it("Scenario 4 — 429 rate limit: no storage, no redirect, exact message", async () => {
@@ -140,12 +161,12 @@ describe("auth login flow", () => {
       }),
     );
 
-    await expect(loginPageSubmit(auth, { replace: locationReplace }, "test@company.com", "password123")).rejects.toThrow(
+    await expect(loginPageSubmit(auth, { assign: locationAssign }, "test@company.com", "password123")).rejects.toThrow(
       "Too many attempts. Please wait a minute and try again.",
     );
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(readCookie(COOKIE_NAME)).toBeNull();
-    expect(locationReplace).not.toHaveBeenCalled();
+    expect(locationAssign).not.toHaveBeenCalled();
   });
 
   it("Scenario 5 — network timeout: no redirect", async () => {
@@ -154,10 +175,10 @@ describe("auth login flow", () => {
     const abortErr = new DOMException("The operation was aborted.", "AbortError");
     vi.mocked(fetch).mockRejectedValueOnce(abortErr);
 
-    await expect(loginPageSubmit(auth, { replace: locationReplace }, "test@company.com", "password123")).rejects.toThrow(
+    await expect(loginPageSubmit(auth, { assign: locationAssign }, "test@company.com", "password123")).rejects.toThrow(
       /timed out/i,
     );
-    expect(locationReplace).not.toHaveBeenCalled();
+    expect(locationAssign).not.toHaveBeenCalled();
   });
 
   it("Scenario 6 — double-submit lock: second click blocked while first in flight", async () => {
@@ -208,11 +229,11 @@ describe("auth login flow", () => {
     expect(auth.isSessionFresh()).toBe(false);
 
     const guardRedirect = () => {
-      if (!auth.getStoredToken()) locationReplace("/login");
+      if (!auth.getStoredToken()) locationAssign("/login");
     };
     auth.clearAuth();
     guardRedirect();
-    expect(locationReplace).toHaveBeenCalledWith("/login");
+    expect(locationAssign).toHaveBeenCalledWith("/login");
   });
 
   it("Scenario 8 — logout clears all storage and redirects to login", async () => {
@@ -228,13 +249,14 @@ describe("auth login flow", () => {
     expect(localStorage.getItem(USER_KEY)).toBeNull();
     expect(localStorage.getItem(SESSION_TIMESTAMP_KEY)).toBeNull();
     expect(readCookie(COOKIE_NAME)).toBeNull();
-    expect(locationReplace).toHaveBeenCalledWith("/login");
+    expect(readCookie(SESSION_COOKIE)).toBeNull();
+    expect(locationAssign).toHaveBeenCalledWith("/login");
   });
 
   it("Scenario 10 — navigateAfterAuth no-op without session", async () => {
     const auth = await loadAuthModule();
     auth.navigateAfterAuth("/dashboard");
-    expect(locationReplace).not.toHaveBeenCalled();
+    expect(locationAssign).not.toHaveBeenCalled();
   });
 
   it("Scenario 9 — forgot password returns same generic message for any email", async () => {

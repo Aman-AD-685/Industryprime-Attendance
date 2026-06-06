@@ -100,7 +100,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
       if (token && cached) {
         setUser(cached);
         setLoadingSession(false);
-        navigateAfterAuth(dashboardPathForRole(cached.role));
       } else if (!token) {
         setUser(null);
         setLoadingSession(false);
@@ -174,17 +173,23 @@ export default function AppShell({ children }: { children: ReactNode }) {
       const cached = getStoredUser();
       if (token && cached) {
         setUser(cached);
+        setLoadingSession(false);
         return;
       }
       if (token) {
         setLoadingSession(true);
+        void revalidateSessionUser().then((fresh) => {
+          if (fresh) setUser(fresh);
+          else clearAuth();
+          setLoadingSession(false);
+        });
         return;
       }
       router.replace("/login");
       return;
     }
     if (user && redirectIfAuthedPublic) {
-      navigateAfterAuth(dashboardPathForRole(user.role));
+      navigateAfterAuth(dashboardPathForRole(user.role), { force: true });
     }
   }, [isPublicRoute, loadingSession, pathname, redirectIfAuthedPublic, router, user]);
 

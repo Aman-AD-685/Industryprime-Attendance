@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRef, useState } from "react";
-import { dashboardPathForRole, forgotPassword, getStoredUser, login, navigateAfterAuth } from "@/lib/auth";
+import { dashboardPathForRole, forgotPassword, getStoredUser, login, navigateAfterAuth, scheduleAuthNavigationFallback } from "@/lib/auth";
 import { errorMessageForUser } from "@/lib/userFacingError";
 
 export default function LoginPage() {
@@ -47,8 +47,10 @@ export default function LoginPage() {
     let navigated = false;
     try {
       const signedIn = await login(emailTrim, password);
+      const dest = dashboardPathForRole(signedIn.role);
       navigated = true;
-      navigateAfterAuth(dashboardPathForRole(signedIn.role));
+      navigateAfterAuth(dest, { force: true });
+      scheduleAuthNavigationFallback(dest);
     } catch (err) {
       if (redirectAfterAuth()) return;
       setError(errorMessageForUser(err, "Sign-in did not complete. Please try again."));

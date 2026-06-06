@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isLeaveEmailPublicPath } from "@/lib/leaveEmailPublicPaths";
 
 const AUTH_COOKIE = "industryprime_token";
+const SESSION_COOKIE = "industryprime_session";
 /** Paths reachable without a session cookie (includes public attendance entry). */
 const publicUnauthenticatedRoutes = new Set(["/login", "/signup", "/attendance-entry", "/attendance-upload"]);
 /** Logged-in users are redirected away from these (not from `/attendance-entry`). */
@@ -40,17 +41,19 @@ function roleFromAuthToken(token: string): string | null {
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get(AUTH_COOKIE)?.value;
+  const sessionFlag = request.cookies.get(SESSION_COOKIE)?.value;
+  const hasSession = Boolean(token || sessionFlag);
 
   if (pathname === "/") {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (!token && !isPublicUnauthenticatedPath(pathname)) {
+  if (!hasSession && !isPublicUnauthenticatedPath(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (token && redirectIfAuthedRoutes.has(pathname)) {
-    const dest = dashboardPathForJwtRole(roleFromAuthToken(token));
+  if (hasSession && redirectIfAuthedRoutes.has(pathname)) {
+    const dest = token ? dashboardPathForJwtRole(roleFromAuthToken(token)) : "/dashboard";
     return NextResponse.redirect(new URL(dest, request.url));
   }
 

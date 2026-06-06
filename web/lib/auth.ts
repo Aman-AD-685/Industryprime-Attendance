@@ -29,6 +29,8 @@ type SignupStartResponse = {
 export const TOKEN_KEY = "industryprime.authToken";
 export const USER_KEY = "industryprime.authUser";
 export const COOKIE_NAME = "industryprime_token";
+/** Lightweight presence flag for `proxy.ts` when JWT cookie is too large or blocked. */
+export const SESSION_COOKIE = "industryprime_session";
 export const SESSION_TIMESTAMP_KEY = "industryprime.sessionTimestamp";
 /** @deprecated Legacy key — cleared on logout for migration */
 const SESSION_CHECKED_AT_KEY = "industryprime.sessionCheckedAt";
@@ -59,7 +61,13 @@ function setCookie(name: string, value: string, maxAgeSeconds: number) {
 }
 
 function clearCookie(name: string) {
-  document.cookie = `${name}=; path=/; max-age=0; samesite=lax`;
+  const secure =
+    typeof window !== "undefined" && window.location.protocol === "https:" ? "; secure" : "";
+  document.cookie = `${name}=; path=/; max-age=0; samesite=lax${secure}`;
+}
+
+export function hasServerSessionCookie(): boolean {
+  return Boolean(readCookieRaw(COOKIE_NAME) || readCookieRaw(SESSION_COOKIE));
 }
 
 function authFetchTimeoutMs(path: string): number {
@@ -208,10 +216,15 @@ export function getStoredUser(): AuthUser | null {
 }
 
 export async function storeAuth(token: string, user: AuthUser): Promise<void> {
-  window.localStorage.setItem(TOKEN_KEY, token);
-  window.localStorage.setItem(USER_KEY, JSON.stringify(user));
-  window.localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
+  try {
+    window.localStorage.setItem(TOKEN_KEY, token);
+    window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+    window.localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
+  } catch {
+    /* localStorage blocked — rely on session cookies for proxy gate */
+  }
   setCookie(COOKIE_NAME, token, 60 * 60 * 8);
+  setCookie(SESSION_COOKIE, "1", 60 * 60 * 8);
   await new Promise<void>((resolve) => {
     window.setTimeout(resolve, 0);
   });
@@ -220,10 +233,9 @@ export async function storeAuth(token: string, user: AuthUser): Promise<void> {
 
 /**
  * Full page navigation after login/signup (production-safe).
- * Soft `router.replace()` can navigate before `industryprime_token` is on the request,
- * so `proxy.ts` sends the user back to /login until a manual refresh.
+ * Uses `location.assign` so the browser sends session cookies on the next request.
  */
-export function navigateAfterAuth(path: string): void {
+export function navigateAfterAuth(path: string, options?: { force?: boolean }): void {
   if (typeof window === "undefined") return;
   const dest = path.startsWith("/") ? path : `/${path}`;
   const publicDest =
@@ -232,10 +244,26 @@ export function navigateAfterAuth(path: string): void {
     dest.startsWith("/signup/") ||
     dest === "/attendance-entry" ||
     dest === "/attendance-upload";
-  if (!publicDest && !getStoredToken() && !readCookieRaw(COOKIE_NAME)) {
+  if (
+    !options?.force &&
+    !publicDest &&
+    !getStoredToken() &&
+    !hasServerSessionCookie()
+  ) {
     return;
   }
-  window.location.replace(dest);
+  window.location.assign(dest);
+}
+
+/** If soft navigation fails (PWA/cache), force redirect so login never sticks on "Logging in…". */
+export function scheduleAuthNavigationFallback(path: string, delayMs = 2500): void {
+  if (typeof window === "undefined") return;
+  const dest = path.startsWith("/") ? path : `/${path}`;
+  window.setTimeout(() => {
+    if (window.location.pathname.replace(/\/$/, "") === "/login") {
+      window.location.href = dest;
+    }
+  }, delayMs);
 }
 
 export function clearAuth(): void {
@@ -244,6 +272,7 @@ export function clearAuth(): void {
   window.localStorage.removeItem(SESSION_TIMESTAMP_KEY);
   window.localStorage.removeItem(SESSION_CHECKED_AT_KEY);
   clearCookie(COOKIE_NAME);
+  clearCookie(SESSION_COOKIE);
   window.dispatchEvent(new Event("industryprime-auth-change"));
 }
 

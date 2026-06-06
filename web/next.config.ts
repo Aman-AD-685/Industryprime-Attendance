@@ -13,6 +13,8 @@ const withPWA = require("next-pwa")({
   register: true,
   skipWaiting: true,
   buildExcludes: [/middleware-manifest\.json$/],
+  /** Never cache auth pages — stale SW caused production login to hang on "Logging in…". */
+  publicExcludes: ["!login", "!signup"],
 });
 
 const nextConfig: NextConfig = {};

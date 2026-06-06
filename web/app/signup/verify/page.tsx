@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { dashboardPathForRole, getStoredUser, navigateAfterAuth, signupResend, signupVerify } from "@/lib/auth";
+import { dashboardPathForRole, getStoredUser, navigateAfterAuth, scheduleAuthNavigationFallback, signupResend, signupVerify } from "@/lib/auth";
 
 function parseEmail(raw: string | null): string {
   return (raw || "").trim().toLowerCase();
@@ -78,7 +78,9 @@ function SignupVerifyContent() {
       }
       const cached = getStoredUser();
       if (cached) {
-        navigateAfterAuth(dashboardPathForRole(cached.role));
+        const dest = dashboardPathForRole(cached.role);
+        navigateAfterAuth(dest, { force: true });
+        scheduleAuthNavigationFallback(dest);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
