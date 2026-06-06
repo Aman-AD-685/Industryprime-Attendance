@@ -1,6 +1,6 @@
 "use client";
 
-import { getStoredToken } from "@/lib/auth";
+import { clearAuth, getStoredToken, refreshAccessToken } from "@/lib/auth";
 import {
   DEFAULT_API_TIMEOUT_MS,
   LEAVE_API_TIMEOUT_MS,
@@ -43,12 +43,30 @@ export async function getAccessToken(): Promise<string | null> {
   return getStoredToken();
 }
 
-/**
- * Backend-owned auth does not need a Supabase Auth profile bootstrap.
- * Kept as a no-op for older feature pages that still call it.
- */
-export async function ensureTenantProfile(): Promise<void> {
-  return;
+async function fetchWithAuthRetry(
+  url: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  const token = getStoredToken();
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  let res = await fetchWithTimeout(url, { ...init, headers }, timeoutMs);
+
+  if (res.status === 401 && token) {
+    const user = await refreshAccessToken();
+    if (user) {
+      const nextToken = getStoredToken();
+      const retryHeaders = new Headers(init?.headers);
+      if (nextToken) retryHeaders.set("Authorization", `Bearer ${nextToken}`);
+      res = await fetchWithTimeout(url, { ...init, headers: retryHeaders }, timeoutMs);
+    } else {
+      clearAuth();
+    }
+  }
+
+  return res;
 }
 
 export async function apiFetch<T = any>(
@@ -56,25 +74,13 @@ export async function apiFetch<T = any>(
   init?: RequestInit,
   timeoutMs = DEFAULT_API_TIMEOUT_MS,
 ): Promise<T> {
-  const token = await getAccessToken();
-
-  const headers = new Headers(init?.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-
   const raw = effectiveApiBase();
   const base = raw.endsWith("/") ? raw.slice(0, -1) : raw;
   const p = path.startsWith("/") ? path : `/${path}`;
   const url = `${base}${p}`;
   let res: Response;
   try {
-    res = await fetchWithTimeout(
-      url,
-      {
-        ...init,
-        headers,
-      },
-      timeoutMs,
-    );
+    res = await fetchWithAuthRetry(url, init, timeoutMs);
   } catch (e) {
     const aborted =
       (e instanceof DOMException && e.name === "AbortError") ||
@@ -94,22 +100,26 @@ export async function apiFetch<T = any>(
   return (await res.json()) as T;
 }
 
+/**
+ * Backend-owned auth does not need a Supabase Auth profile bootstrap.
+ * Kept as a no-op for older feature pages that still call it.
+ */
+export async function ensureTenantProfile(): Promise<void> {
+  return;
+}
+
 export async function apiFetchBlob(
   path: string,
   init?: RequestInit,
   timeoutMs = DEFAULT_API_TIMEOUT_MS,
 ): Promise<Blob> {
-  const token = await getAccessToken();
-  const headers = new Headers(init?.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-
   const raw = effectiveApiBase();
   const base = raw.endsWith("/") ? raw.slice(0, -1) : raw;
   const p = path.startsWith("/") ? path : `/${path}`;
   const url = `${base}${p}`;
   let res: Response;
   try {
-    res = await fetchWithTimeout(url, { ...init, headers }, timeoutMs);
+    res = await fetchWithAuthRetry(url, init, timeoutMs);
   } catch (e) {
     const aborted =
       (e instanceof DOMException && e.name === "AbortError") ||

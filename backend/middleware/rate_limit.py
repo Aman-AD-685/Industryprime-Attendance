@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 _STRICT_PREFIXES: Tuple[Tuple[str, int, int], ...] = (
     ("/auth/login", 20, 60),
     ("/login", 20, 60),
+    ("/auth/refresh", 30, 60),
     ("/auth/signup", 12, 60),
     ("/auth/forgot-password", 10, 60),
     ("/leave/approve", 30, 60),

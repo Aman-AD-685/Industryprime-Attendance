@@ -15,6 +15,7 @@ export type AuthUser = {
 
 type AuthResponse = {
   access_token: string;
+  refresh_token?: string;
   token_type: "bearer";
   user: AuthUser;
 };
@@ -27,6 +28,7 @@ type SignupStartResponse = {
 };
 
 export const TOKEN_KEY = "industryprime.authToken";
+export const REFRESH_TOKEN_KEY = "industryprime.refreshToken";
 export const USER_KEY = "industryprime.authUser";
 export const COOKIE_NAME = "industryprime_token";
 /** Lightweight presence flag for `proxy.ts` when JWT cookie is too large or blocked. */
@@ -34,11 +36,57 @@ export const SESSION_COOKIE = "industryprime_session";
 export const SESSION_TIMESTAMP_KEY = "industryprime.sessionTimestamp";
 /** @deprecated Legacy key — cleared on logout for migration */
 const SESSION_CHECKED_AT_KEY = "industryprime.sessionCheckedAt";
+const LEGACY_LS_KEYS = [TOKEN_KEY, REFRESH_TOKEN_KEY, USER_KEY, SESSION_TIMESTAMP_KEY, SESSION_CHECKED_AT_KEY];
+
+/** FMS-style: session ends when all tabs close (sessionStorage, not localStorage). */
+function authStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage;
+}
+
+function readAuthItem(key: string): string | null {
+  const store = authStorage();
+  if (!store) return null;
+  try {
+    const fromSession = store.getItem(key);
+    if (fromSession?.trim()) return fromSession;
+    const legacy = window.localStorage.getItem(key);
+    if (legacy?.trim()) {
+      store.setItem(key, legacy);
+      window.localStorage.removeItem(key);
+      return legacy;
+    }
+  } catch {
+    /* private mode / quota */
+  }
+  return null;
+}
+
+function writeAuthItem(key: string, value: string): void {
+  const store = authStorage();
+  if (!store) return;
+  try {
+    store.setItem(key, value);
+  } catch {
+    /* sessionStorage blocked — cookies used for proxy gate */
+  }
+}
+
+function removeAuthItem(key: string): void {
+  try {
+    authStorage()?.removeItem(key);
+    window.localStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
 
 /** Abort hung API calls so refresh never spins forever (esp. offline / wrong NEXT_PUBLIC_API_URL). */
 const AUTH_FETCH_TIMEOUT_MS = 18_000;
-/** Login/signup against Render — allow cold-start (direct browser → API, not Vercel proxy). */
-const AUTH_LOGIN_TIMEOUT_MS = 45_000;
+/** Login/signup — FMS uses 180s for cold Render / Supabase latency. */
+const AUTH_LOGIN_TIMEOUT_MS = 180_000;
+/** Proactive token refresh interval (FMS: 50 minutes). */
+export const SESSION_REFRESH_INTERVAL_MS = 50 * 60 * 1000;
 /** Session probe — fail fast so shell can render from cache quickly. */
 const SESSION_FETCH_TIMEOUT_MS = 8_000;
 /** Skip /auth/me when cache was validated recently (ms). */
@@ -82,8 +130,7 @@ export function isSessionFresh(): boolean {
   if (typeof window === "undefined") return false;
   try {
     const raw =
-      window.localStorage.getItem(SESSION_TIMESTAMP_KEY) ??
-      window.localStorage.getItem(SESSION_CHECKED_AT_KEY);
+      readAuthItem(SESSION_TIMESTAMP_KEY) ?? readAuthItem(SESSION_CHECKED_AT_KEY);
     if (!raw) return false;
     const t = Number(raw);
     return Number.isFinite(t) && Date.now() - t < SESSION_TTL_MS;
@@ -94,11 +141,25 @@ export function isSessionFresh(): boolean {
 
 export function markSessionFresh(): void {
   if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
-  } catch {
-    /* ignore */
-  }
+  writeAuthItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
+}
+
+function isRetryableAuthError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes("timed out") ||
+    msg.includes("cannot reach") ||
+    msg.includes("bad gateway") ||
+    msg.includes("temporarily unavailable") ||
+    msg.includes("502") ||
+    msg.includes("503") ||
+    msg.includes("504")
+  );
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
 async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
@@ -193,38 +254,50 @@ async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
 
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
-  const fromLs = window.localStorage.getItem(TOKEN_KEY);
-  if (fromLs && fromLs.trim()) return fromLs;
-  /** Middleware uses this cookie on refresh; if LS was cleared/out of sync, recover so /auth/me can run */
+  const fromSession = readAuthItem(TOKEN_KEY);
+  if (fromSession?.trim()) return fromSession;
+  /** Middleware uses this cookie on refresh; if session was cleared, recover so /auth/me can run */
   const fromCookie = readCookieRaw(COOKIE_NAME);
-  if (fromCookie && fromCookie.trim()) {
-    try {
-      window.localStorage.setItem(TOKEN_KEY, fromCookie);
-    } catch {
-      /* private mode / quota */
-    }
+  if (fromCookie?.trim()) {
+    writeAuthItem(TOKEN_KEY, fromCookie);
     return fromCookie;
   }
   return null;
 }
 
+export function getStoredRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = readAuthItem(REFRESH_TOKEN_KEY);
+  return raw?.trim() ? raw : null;
+}
+
 export function getStoredUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(USER_KEY);
+    const raw = readAuthItem(USER_KEY);
     return raw ? (JSON.parse(raw) as AuthUser) : null;
   } catch {
     return null;
   }
 }
 
-export async function storeAuth(token: string, user: AuthUser): Promise<void> {
-  try {
-    window.localStorage.setItem(TOKEN_KEY, token);
-    window.localStorage.setItem(USER_KEY, JSON.stringify(user));
-    window.localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
-  } catch {
-    /* localStorage blocked — rely on session cookies for proxy gate */
+export async function storeAuth(
+  token: string,
+  user: AuthUser,
+  refreshToken?: string | null,
+): Promise<void> {
+  writeAuthItem(TOKEN_KEY, token);
+  writeAuthItem(USER_KEY, JSON.stringify(user));
+  writeAuthItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
+  if (refreshToken?.trim()) {
+    writeAuthItem(REFRESH_TOKEN_KEY, refreshToken.trim());
+  }
+  for (const key of LEGACY_LS_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
   }
   setCookie(COOKIE_NAME, token, 60 * 60 * 8);
   setCookie(SESSION_COOKIE, "1", 60 * 60 * 8);
@@ -286,13 +359,73 @@ export function scheduleAuthNavigationFallback(path: string, delayMs = 2500): vo
 }
 
 export function clearAuth(): void {
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(USER_KEY);
-  window.localStorage.removeItem(SESSION_TIMESTAMP_KEY);
-  window.localStorage.removeItem(SESSION_CHECKED_AT_KEY);
+  for (const key of LEGACY_LS_KEYS) {
+    removeAuthItem(key);
+  }
   clearCookie(COOKIE_NAME);
   clearCookie(SESSION_COOKIE);
   window.dispatchEvent(new Event("industryprime-auth-change"));
+}
+
+let refreshInFlight: Promise<AuthUser | null> | null = null;
+
+/** FMS-style: refresh access token using refresh_token; returns user or null on failure. */
+export async function refreshAccessToken(): Promise<AuthUser | null> {
+  const refreshToken = getStoredRefreshToken();
+  if (!refreshToken) return null;
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    try {
+      const data = await authRequest<AuthResponse>("/auth/refresh", {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!data?.access_token || !data?.user) return null;
+      await storeAuth(data.access_token, data.user, data.refresh_token ?? refreshToken);
+      return data.user;
+    } catch {
+      return null;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
+}
+
+/** Proactive refresh every 50 min + once when tab regains focus (FMS AuthProvider pattern). */
+export function setupAuthSessionMaintenance(): () => void {
+  if (typeof window === "undefined") return () => undefined;
+
+  let refreshTimer: number | null = null;
+
+  const tick = () => {
+    if (!getStoredRefreshToken() && !getStoredToken()) return;
+    void refreshAccessToken().then((user) => {
+      if (!user && getStoredToken()) {
+        void revalidateSessionUser().then((fresh) => {
+          if (!fresh) clearAuth();
+        });
+      }
+    });
+  };
+
+  refreshTimer = window.setInterval(tick, SESSION_REFRESH_INTERVAL_MS);
+
+  const onFocus = () => {
+    if (document.visibilityState !== "visible") return;
+    if (!getStoredToken()) return;
+    if (isSessionFresh()) return;
+    tick();
+  };
+
+  document.addEventListener("visibilitychange", onFocus);
+
+  return () => {
+    if (refreshTimer) window.clearInterval(refreshTimer);
+    document.removeEventListener("visibilitychange", onFocus);
+  };
 }
 
 /** One in-flight login per email — prevents double-click / multi-submit races and rate-limit spikes. */
@@ -311,19 +444,32 @@ export async function login(email: string, password: string): Promise<AuthUser> 
   }
 
   const promise = (async () => {
-    const data = await authRequest<AuthResponse>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email: key, password }),
-    });
-    if (!data?.access_token || !data?.user) {
-      throw new Error(
-        userFacingApiDetail(
-          "Login response was missing a token or user profile. Confirm /api proxies to your FastAPI app (see BACKEND_PROXY_TARGET / NEXT_PUBLIC_API_URL on Vercel).",
-        ),
-      );
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const data = await authRequest<AuthResponse>("/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ email: key, password }),
+        });
+        if (!data?.access_token || !data?.user) {
+          throw new Error(
+            userFacingApiDetail(
+              "Login response was missing a token or user profile. Confirm NEXT_PUBLIC_API_URL points at your FastAPI app on Render.",
+            ),
+          );
+        }
+        await storeAuth(data.access_token, data.user, data.refresh_token);
+        return data.user;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2 && isRetryableAuthError(err)) {
+          await sleep(1500 * (attempt + 1));
+          continue;
+        }
+        throw err;
+      }
     }
-    await storeAuth(data.access_token, data.user);
-    return data.user;
+    throw lastErr instanceof Error ? lastErr : new Error("Login failed");
   })();
 
   loginInFlight = { key, promise };
@@ -366,7 +512,7 @@ export async function signupVerify(
   if (!data?.access_token || !data?.user) {
     throw new Error("Signup verification response missing token or user profile.");
   }
-  await storeAuth(data.access_token, data.user);
+  await storeAuth(data.access_token, data.user, data.refresh_token);
   return data.user;
 }
 
@@ -407,17 +553,23 @@ export async function getCurrentUser(options?: { force?: boolean }): Promise<Aut
   if (!data?.user) {
     throw new Error("Session response was missing user data.");
   }
-  window.localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+  writeAuthItem(USER_KEY, JSON.stringify(data.user));
   markSessionFresh();
   return data.user;
 }
 
 /** Use cached user when possible; revalidate /auth/me in background. */
 export async function revalidateSessionUser(): Promise<AuthUser | null> {
-  if (!getStoredToken()) return null;
+  if (!getStoredToken()) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) return refreshed;
+    return null;
+  }
   try {
     return await getCurrentUser({ force: true });
   } catch {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) return refreshed;
     return null;
   }
 }

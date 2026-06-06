@@ -11,10 +11,12 @@ from services.auth_service import (
     ALLOWED_ROLES,
     authenticate_user,
     consume_pending_signup,
-    create_access_token,
     create_pending_signup,
+    decode_refresh_token,
     get_pending_signup,
+    get_user_by_id,
     hash_password,
+    issue_auth_tokens,
     public_user,
     require_role,
     signup_user,
@@ -92,6 +94,19 @@ class SignupVerifyRequest(BaseModel):
 class SignupResendRequest(BaseModel):
     email: str = Field(..., min_length=5, max_length=255)
     signup_ticket: Optional[str] = None
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=20, max_length=4096)
+
+
+def _auth_response(user: Dict[str, Any]) -> Dict[str, Any]:
+    tokens = issue_auth_tokens(user)
+    return {
+        **tokens,
+        "token_type": "bearer",
+        "user": public_user(user),
+    }
 
 
 def _validate_email_like(email: str) -> str:
@@ -185,11 +200,7 @@ def signup_verify(payload: SignupVerifyRequest):
         )
     except Exception:
         pass
-    return {
-        "access_token": create_access_token(user),
-        "token_type": "bearer",
-        "user": public_user(user),
-    }
+    return _auth_response(user)
 
 
 @router.post("/signup/resend", response_model=Dict[str, Any])
@@ -245,11 +256,7 @@ def login(payload: LoginRequest, background_tasks: BackgroundTasks):
             target_id=public.get("id"),
             metadata={"role": public.get("role")},
         )
-        return {
-            "access_token": create_access_token(user),
-            "token_type": "bearer",
-            "user": public,
-        }
+        return _auth_response(user)
     except HTTPException:
         raise
     except RuntimeError as exc:
@@ -262,6 +269,15 @@ def login(payload: LoginRequest, background_tasks: BackgroundTasks):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Login failed on backend: {type(exc).__name__}",
         ) from exc
+
+
+@router.post("/refresh", response_model=Dict[str, Any])
+def refresh_session(payload: RefreshRequest):
+    claims = decode_refresh_token(payload.refresh_token.strip())
+    user = get_user_by_id(str(claims["sub"]))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+    return _auth_response(user)
 
 
 @router.get("/me", response_model=Dict[str, Any])

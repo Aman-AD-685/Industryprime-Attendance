@@ -60,6 +60,23 @@ def _b64url_decode(data: str) -> bytes:
     return base64.urlsafe_b64decode((data + padding).encode("ascii"))
 
 
+def _decode_jwt(token: str) -> Dict[str, Any]:
+    try:
+        header_raw, payload_raw, signature_raw = token.split(".", 2)
+        signing_input = f"{header_raw}.{payload_raw}"
+        expected = hmac.new(_jwt_secret().encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
+        actual = _b64url_decode(signature_raw)
+        if not hmac.compare_digest(actual, expected):
+            raise ValueError("Invalid signature")
+        payload = json.loads(_b64url_decode(payload_raw))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+
+    if int(payload.get("exp", 0)) < int(time.time()):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+    return payload
+
+
 def create_access_token(user: Dict[str, Any], expires_in_seconds: int = 60 * 60 * 8) -> str:
     now = int(time.time())
     payload = {
@@ -67,6 +84,25 @@ def create_access_token(user: Dict[str, Any], expires_in_seconds: int = 60 * 60 
         "email": user["email"],
         "name": user.get("name") or "",
         "role": user["role"],
+        "typ": "access",
+        "iat": now,
+        "exp": now + expires_in_seconds,
+    }
+    header = {"alg": "HS256", "typ": "JWT"}
+    signing_input = (
+        _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
+        + "."
+        + _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    )
+    signature = hmac.new(_jwt_secret().encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
+    return signing_input + "." + _b64url_encode(signature)
+
+
+def create_refresh_token(user: Dict[str, Any], expires_in_seconds: int = 60 * 60 * 24 * 30) -> str:
+    now = int(time.time())
+    payload = {
+        "sub": str(user["id"]),
+        "typ": "refresh",
         "iat": now,
         "exp": now + expires_in_seconds,
     }
@@ -81,22 +117,27 @@ def create_access_token(user: Dict[str, Any], expires_in_seconds: int = 60 * 60 
 
 
 def decode_access_token(token: str) -> Dict[str, Any]:
-    try:
-        header_raw, payload_raw, signature_raw = token.split(".", 2)
-        signing_input = f"{header_raw}.{payload_raw}"
-        expected = hmac.new(_jwt_secret().encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
-        actual = _b64url_decode(signature_raw)
-        if not hmac.compare_digest(actual, expected):
-            raise ValueError("Invalid signature")
-        payload = json.loads(_b64url_decode(payload_raw))
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
-
-    if int(payload.get("exp", 0)) < int(time.time()):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+    payload = _decode_jwt(token)
+    token_type = payload.get("typ")
+    if token_type == "refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
     if payload.get("role") not in ALLOWED_ROLES:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token role")
     return payload
+
+
+def decode_refresh_token(token: str) -> Dict[str, Any]:
+    payload = _decode_jwt(token)
+    if payload.get("typ") != "refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+    return payload
+
+
+def issue_auth_tokens(user: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        "access_token": create_access_token(user),
+        "refresh_token": create_refresh_token(user),
+    }
 
 
 def normalize_email(email: str) -> str:

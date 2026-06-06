@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   COOKIE_NAME,
+  REFRESH_TOKEN_KEY,
   SESSION_COOKIE,
   SESSION_TIMESTAMP_KEY,
   TOKEN_KEY,
@@ -23,6 +24,7 @@ const sampleUser = (role: AuthUser["role"]): AuthUser => ({
 function mockLoginResponse(role: AuthUser["role"], token = "jwt-token-abc") {
   return {
     access_token: token,
+    refresh_token: "refresh-token-xyz",
     token_type: "bearer",
     user: sampleUser(role),
   };
@@ -41,6 +43,10 @@ function clearAllCookies() {
       document.cookie = `${name}=; path=/; max-age=0; samesite=lax`;
     }
   }
+}
+
+function authGet(key: string): string | null {
+  return sessionStorage.getItem(key);
 }
 
 async function loadAuthModule() {
@@ -65,6 +71,7 @@ describe("auth login flow", () => {
 
   beforeEach(() => {
     vi.resetModules();
+    sessionStorage.clear();
     localStorage.clear();
     clearAllCookies();
     locationAssign.mockReset();
@@ -110,7 +117,7 @@ describe("auth login flow", () => {
     let tokenAtRedirect: string | null = null;
     let cookieAtRedirect: string | null = null;
     locationAssign.mockImplementation(() => {
-      tokenAtRedirect = localStorage.getItem(TOKEN_KEY);
+      tokenAtRedirect = authGet(TOKEN_KEY);
       cookieAtRedirect = readCookie(COOKIE_NAME);
     });
 
@@ -120,7 +127,8 @@ describe("auth login flow", () => {
     expect(tokenAtRedirect).toBe("jwt-token-abc");
     expect(cookieAtRedirect).toBe("jwt-token-abc");
     expect(readCookie(SESSION_COOKIE)).toBe("1");
-    expect(localStorage.getItem(USER_KEY)).toBe(JSON.stringify(payload.user));
+    expect(authGet(USER_KEY)).toBe(JSON.stringify(payload.user));
+    expect(authGet(REFRESH_TOKEN_KEY)).toBe("refresh-token-xyz");
     expect(locationAssign).toHaveBeenCalledOnce();
     expect(locationAssign).toHaveBeenCalledWith("/dashboard");
   });
@@ -145,8 +153,8 @@ describe("auth login flow", () => {
     );
 
     await expect(loginPageSubmit(auth, { assign: locationAssign }, "bad@company.com", "wrongpass1")).rejects.toThrow();
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(USER_KEY)).toBeNull();
+    expect(authGet(TOKEN_KEY)).toBeNull();
+    expect(authGet(USER_KEY)).toBeNull();
     expect(readCookie(COOKIE_NAME)).toBeNull();
     expect(locationAssign).not.toHaveBeenCalled();
   });
@@ -164,7 +172,7 @@ describe("auth login flow", () => {
     await expect(loginPageSubmit(auth, { assign: locationAssign }, "test@company.com", "password123")).rejects.toThrow(
       "Too many attempts. Please wait a minute and try again.",
     );
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(authGet(TOKEN_KEY)).toBeNull();
     expect(readCookie(COOKIE_NAME)).toBeNull();
     expect(locationAssign).not.toHaveBeenCalled();
   });
@@ -173,7 +181,10 @@ describe("auth login flow", () => {
     const auth = await loadAuthModule();
 
     const abortErr = new DOMException("The operation was aborted.", "AbortError");
-    vi.mocked(fetch).mockRejectedValueOnce(abortErr);
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(abortErr)
+      .mockRejectedValueOnce(abortErr)
+      .mockRejectedValueOnce(abortErr);
 
     await expect(loginPageSubmit(auth, { assign: locationAssign }, "test@company.com", "password123")).rejects.toThrow(
       /timed out/i,
@@ -211,21 +222,21 @@ describe("auth login flow", () => {
     const auth = await loadAuthModule();
     const user = sampleUser("admin");
 
-    await auth.storeAuth("hydrate-token", user);
+    await auth.storeAuth("hydrate-token", user, "refresh-hydrate");
 
-    expect(localStorage.getItem(TOKEN_KEY)).toBe("hydrate-token");
-    expect(localStorage.getItem(USER_KEY)).toBe(JSON.stringify(user));
+    expect(authGet(TOKEN_KEY)).toBe("hydrate-token");
+    expect(authGet(USER_KEY)).toBe(JSON.stringify(user));
     expect(readCookie(COOKIE_NAME)).toBe("hydrate-token");
     expect(auth.getStoredToken()).toBe("hydrate-token");
     expect(auth.getStoredUser()).toEqual(user);
     expect(auth.isSessionFresh()).toBe(true);
 
     const fourMinutesAgo = String(Date.now() - 4 * 60 * 1000);
-    localStorage.setItem(SESSION_TIMESTAMP_KEY, fourMinutesAgo);
+    sessionStorage.setItem(SESSION_TIMESTAMP_KEY, fourMinutesAgo);
     expect(auth.isSessionFresh()).toBe(true);
 
     const sixMinutesAgo = String(Date.now() - 6 * 60 * 1000);
-    localStorage.setItem(SESSION_TIMESTAMP_KEY, sixMinutesAgo);
+    sessionStorage.setItem(SESSION_TIMESTAMP_KEY, sixMinutesAgo);
     expect(auth.isSessionFresh()).toBe(false);
 
     const guardRedirect = () => {
@@ -239,15 +250,16 @@ describe("auth login flow", () => {
   it("Scenario 8 — logout clears all storage and redirects to login", async () => {
     const auth = await loadAuthModule();
 
-    await auth.storeAuth("logout-token", sampleUser("user"));
-    expect(localStorage.getItem(TOKEN_KEY)).not.toBeNull();
+    await auth.storeAuth("logout-token", sampleUser("user"), "refresh-logout");
+    expect(authGet(TOKEN_KEY)).not.toBeNull();
 
     auth.clearAuth();
     auth.navigateAfterAuth("/login");
 
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(USER_KEY)).toBeNull();
-    expect(localStorage.getItem(SESSION_TIMESTAMP_KEY)).toBeNull();
+    expect(authGet(TOKEN_KEY)).toBeNull();
+    expect(authGet(USER_KEY)).toBeNull();
+    expect(authGet(REFRESH_TOKEN_KEY)).toBeNull();
+    expect(authGet(SESSION_TIMESTAMP_KEY)).toBeNull();
     expect(readCookie(COOKIE_NAME)).toBeNull();
     expect(readCookie(SESSION_COOKIE)).toBeNull();
     expect(locationAssign).toHaveBeenCalledWith("/login");

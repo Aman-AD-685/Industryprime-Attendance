@@ -116,6 +116,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, [redirectIfAuthedPublic]);
 
   useEffect(() => {
+    if (!isPublicRoute) {
+      const failSafe = window.setTimeout(() => {
+        setLoadingSession(false);
+      }, 12_000);
+      return () => window.clearTimeout(failSafe);
+    }
+  }, [isPublicRoute, pathname]);
+
+  useEffect(() => {
     if (isPublicRoute) {
       return;
     }
