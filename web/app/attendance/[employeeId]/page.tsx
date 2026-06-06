@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getStoredUser, type Role } from "@/lib/auth";
@@ -26,6 +26,7 @@ type AttendanceRow = {
   time_value: number;
   status: "P" | "A";
   status_ot_sf: string;
+  remarks?: string | null;
 };
 
 type Employee = {
@@ -77,6 +78,15 @@ function minutesToHHMM(minutes: number): string {
   const h = Math.floor(m / 60);
   const rem = m % 60;
   return `${h}.${String(rem).padStart(2, "0")}`;
+}
+
+/** HTML time inputs use HH:MM; API may return HH:MM:SS. */
+function normalizeTimeValue(value: string | null | undefined): string {
+  if (!value?.trim()) return "";
+  const s = value.trim();
+  if (/^\d{1,2}:\d{2}:\d{2}$/.test(s)) return s.slice(0, 5);
+  if (/^\d{1,2}:\d{2}$/.test(s)) return s;
+  return s.length >= 5 ? s.slice(0, 5) : s;
 }
 
 function calculateLocal(
@@ -242,8 +252,35 @@ export default function AttendanceDetailPage() {
   const [months, setMonths] = useState<MonthOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingDate, setSavingDate] = useState<string | null>(null);
+  const [remarksModal, setRemarksModal] = useState<{
+    row: AttendanceRow;
+    remarks: string;
+  } | null>(null);
+  const rowsRef = useRef<AttendanceRow[]>([]);
+  const baselineTimesRef = useRef<Map<string, { in: string; out: string }>>(new Map());
+  const promptTimerRef = useRef<Map<string, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [holidays, setHolidays] = useState<Record<string, string>>({});
+
+  rowsRef.current = rows;
+
+  function syncBaselineTimes(nextRows: AttendanceRow[]) {
+    const map = new Map<string, { in: string; out: string }>();
+    for (const row of nextRows) {
+      map.set(row.date, {
+        in: normalizeTimeValue(row.in_time),
+        out: normalizeTimeValue(row.out_time),
+      });
+    }
+    baselineTimesRef.current = map;
+  }
+
+  function isTimeDirty(date: string, inTime?: string | null, outTime?: string | null): boolean {
+    const base = baselineTimesRef.current.get(date) ?? { in: "", out: "" };
+    return (
+      normalizeTimeValue(inTime) !== base.in || normalizeTimeValue(outTime) !== base.out
+    );
+  }
 
   async function loadAttendance(selectedMonth = month, selectedYear = year) {
     setLoading(true);
@@ -257,6 +294,7 @@ export default function AttendanceDetailPage() {
         apiFetch<MonthOption[]>(`/months/${employeeId}`),
       ]);
       setRows(attendance.rows);
+      syncBaselineTimes(attendance.rows);
       setHolidays(attendance.holidays ?? {});
       setEmployee(employees.find((item) => item.id === employeeId) || null);
       setMonths(monthRows);
@@ -280,6 +318,7 @@ export default function AttendanceDetailPage() {
   }, []);
 
   const canEditAttendance = role === "master_admin" || role === "admin";
+  const canEditManualTimes = role === "master_admin";
 
   const displayRows = useMemo<DisplayRow[]>(() => {
     const output: DisplayRow[] = [];
@@ -316,7 +355,7 @@ export default function AttendanceDetailPage() {
     );
   }
 
-  async function saveRow(row: AttendanceRow) {
+  async function saveRow(row: AttendanceRow, options?: { remarks?: string }) {
     if (!canEditAttendance) return;
     if (!row.in_time && row.out_time) {
       return;
@@ -343,15 +382,95 @@ export default function AttendanceDetailPage() {
           late_time: row.late_time,
           time_value: row.time_value,
           status_ot_sf: row.status_ot_sf,
+          remarks: options?.remarks ?? row.remarks ?? null,
         }),
       });
       setRows((items) => items.map((item) => (item.date === updated.date ? updated : item)));
+      baselineTimesRef.current.set(updated.date, {
+        in: normalizeTimeValue(updated.in_time),
+        out: normalizeTimeValue(updated.out_time),
+      });
       window.dispatchEvent(new Event("industryprime-attendance-change"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save attendance");
     } finally {
       setSavingDate(null);
     }
+  }
+
+  function promptManualTimeSave(date: string) {
+    if (!canEditManualTimes) return;
+    const current = rowsRef.current.find((row) => row.date === date);
+    if (!current) return;
+    const inNorm = normalizeTimeValue(current.in_time);
+    const outNorm = normalizeTimeValue(current.out_time);
+    if (!isTimeDirty(date, current.in_time, current.out_time)) return;
+    if (!inNorm && !outNorm) return;
+    setRemarksModal({
+      row: current,
+      remarks: current.remarks?.trim() || "",
+    });
+  }
+
+  function scheduleManualTimePrompt(date: string) {
+    const prev = promptTimerRef.current.get(date);
+    if (prev !== undefined) window.clearTimeout(prev);
+    const id = window.setTimeout(() => {
+      promptTimerRef.current.delete(date);
+      promptManualTimeSave(date);
+    }, 300);
+    promptTimerRef.current.set(date, id);
+  }
+
+  function onManualTimeChange(date: string, patch: Partial<AttendanceRow>) {
+    setRows((items) => {
+      const next = items.map((row) =>
+        row.date === date
+          ? calculateLocal({ ...row, ...patch }, employee?.email, holidays)
+          : row,
+      );
+      rowsRef.current = next;
+      return next;
+    });
+    scheduleManualTimePrompt(date);
+  }
+
+  function cancelManualTimeModal() {
+    const modal = remarksModal;
+    if (modal) {
+      const base = baselineTimesRef.current.get(modal.row.date);
+      if (base) {
+        const reverted = calculateLocal(
+          { ...modal.row, in_time: base.in || null, out_time: base.out || null },
+          employee?.email,
+          holidays,
+        );
+        setRows((items) => {
+          const next = items.map((row) => (row.date === modal.row.date ? reverted : row));
+          rowsRef.current = next;
+          return next;
+        });
+      }
+    }
+    setRemarksModal(null);
+  }
+
+  async function confirmManualTimeModal() {
+    if (!remarksModal) return;
+    const trimmed = remarksModal.remarks.trim();
+    if (!trimmed) {
+      setError("Remarks are required for manual In/Out time entry.");
+      return;
+    }
+    const row = { ...remarksModal.row, remarks: trimmed };
+    setRemarksModal(null);
+    await saveRow(row, { remarks: trimmed });
+  }
+
+  function openManualTimeModalForDate(date: string) {
+    const prev = promptTimerRef.current.get(date);
+    if (prev !== undefined) window.clearTimeout(prev);
+    promptManualTimeSave(date);
   }
 
   function onMonthChange(value: string) {
@@ -393,6 +512,12 @@ export default function AttendanceDetailPage() {
         </div>
       </div>
 
+      {canEditManualTimes ? (
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Master Admin: set In/Out times manually — you will be asked for remarks before each save.
+        </p>
+      ) : null}
+
       {error && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
           {error}
@@ -415,6 +540,7 @@ export default function AttendanceDetailPage() {
                 "Late Time",
                 "Time",
                 "Status OT/SF",
+                "Remarks",
               ].map((title) => (
                 <th key={title} className="border border-zinc-200 px-3 py-2 dark:border-zinc-800">
                   {title}
@@ -425,7 +551,7 @@ export default function AttendanceDetailPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={11} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={12} className="px-4 py-12 text-center text-zinc-500">
                   Loading attendance...
                 </td>
               </tr>
@@ -439,7 +565,7 @@ export default function AttendanceDetailPage() {
                     <td className="border border-zinc-300 px-3 py-2 dark:border-zinc-700">
                       {row.working_hours_display}
                     </td>
-                    <td className="border border-zinc-300 px-3 py-2 dark:border-zinc-700" colSpan={5} />
+                    <td className="border border-zinc-300 px-3 py-2 dark:border-zinc-700" colSpan={6} />
                   </tr>
                 ) : (
                   <tr
@@ -469,20 +595,16 @@ export default function AttendanceDetailPage() {
                     <Cell>{row.day}</Cell>
                     <Cell>{row.date}</Cell>
                     <EditableTime
-                      value={row.in_time || ""}
-                      disabled={!canEditAttendance}
-                      onChange={(value) => updateLocalRow(row.date, { in_time: value })}
-                      onBlur={(value) =>
-                        void saveRow(calculateLocal({ ...row, in_time: value }, employee?.email, holidays))
-                      }
+                      value={normalizeTimeValue(row.in_time)}
+                      disabled={!canEditManualTimes}
+                      onChange={(value) => onManualTimeChange(row.date, { in_time: value })}
+                      onBlur={() => scheduleManualTimePrompt(row.date)}
                     />
                     <EditableTime
-                      value={row.out_time || ""}
-                      disabled={!canEditAttendance}
-                      onChange={(value) => updateLocalRow(row.date, { out_time: value })}
-                      onBlur={(value) =>
-                        void saveRow(calculateLocal({ ...row, out_time: value }, employee?.email, holidays))
-                      }
+                      value={normalizeTimeValue(row.out_time)}
+                      disabled={!canEditManualTimes}
+                      onChange={(value) => onManualTimeChange(row.date, { out_time: value })}
+                      onBlur={() => scheduleManualTimePrompt(row.date)}
                     />
                     <EditableNumber value={row.total_hours} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { total_hours: value })} onBlur={(value) => void saveRow({ ...row, total_hours: value })} />
                     <Cell>{row.working_hours_display ?? minutesToHHMM(hhmmToMinutes(row.working_hours ?? 0))}</Cell>
@@ -510,6 +632,21 @@ export default function AttendanceDetailPage() {
                     <Cell>{row.late_time_display ?? minutesToHHMM(hhmmToMinutes(row.late_time ?? 0))}</Cell>
                     <EditableNumber value={row.time_value} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { time_value: value })} onBlur={(value) => void saveRow({ ...row, time_value: value })} />
                     <EditableText value={savingDate === row.date ? "Saving..." : row.status_ot_sf} disabled={!canEditAttendance} onChange={(value) => patchLocalRow(row.date, { status_ot_sf: value })} onBlur={(value) => void saveRow({ ...row, status_ot_sf: value })} />
+                    <Cell>
+                      {canEditManualTimes && isTimeDirty(row.date, row.in_time, row.out_time) ? (
+                        <button
+                          type="button"
+                          onClick={() => openManualTimeModalForDate(row.date)}
+                          className="rounded-lg bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700"
+                        >
+                          Apply times
+                        </button>
+                      ) : (
+                        <span className="line-clamp-2 max-w-[12rem]" title={row.remarks || undefined}>
+                          {row.remarks?.trim() || "—"}
+                        </span>
+                      )}
+                    </Cell>
                   </tr>
                 )
               )
@@ -517,6 +654,48 @@ export default function AttendanceDetailPage() {
           </tbody>
         </table>
       </div>
+
+      {remarksModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="attendance-remarks-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+            <h2 id="attendance-remarks-title" className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+              Remarks required
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              {remarksModal.row.date} — explain why In/Out times were entered or changed manually.
+            </p>
+            <textarea
+              value={remarksModal.remarks}
+              onChange={(e) => setRemarksModal({ ...remarksModal, remarks: e.target.value })}
+              rows={4}
+              maxLength={2000}
+              placeholder="e.g. Employee forgot to punch; verified with manager."
+              className="mt-4 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelManualTimeModal}
+                className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 dark:border-zinc-700 dark:text-zinc-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmManualTimeModal()}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+              >
+                Save attendance
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -610,7 +789,12 @@ function EditableSelect({
   );
 }
 
-function EditableTime(props: { value: string; disabled?: boolean; onChange: (value: string) => void; onBlur: (value: string) => void }) {
+function EditableTime(props: {
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+}) {
   return (
     <td className="border border-zinc-200 p-1 dark:border-zinc-800">
       <input
@@ -618,7 +802,7 @@ function EditableTime(props: { value: string; disabled?: boolean; onChange: (val
         value={props.value}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
-        onBlur={(event) => props.onBlur(event.target.value)}
+        onBlur={() => props.onBlur?.()}
         className="w-full bg-transparent px-2 py-1 outline-none focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 dark:focus:bg-zinc-900"
       />
     </td>

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import uuid
@@ -316,4 +316,5 @@ def update_employee_attendance(
     return update_attendance(
         payload.model_dump(),
         supabase=get_supabase_user(auth.access_token),
+        actor_role=auth.role,
     )

@@ -68,6 +68,7 @@ class AttendanceUpdateIn(BaseModel):
     late_time: Optional[float] = None
     time_value: Optional[float] = None
     status_ot_sf: Optional[str] = None
+    remarks: Optional[str] = Field(default=None, max_length=2000)
 
 
 class EmployeeAttendanceRowOut(BaseModel):
@@ -92,6 +93,7 @@ class EmployeeAttendanceRowOut(BaseModel):
     time_value: float
     status: str
     status_ot_sf: str
+    remarks: Optional[str] = None
 
 
 class RecalculateLateCutoffIn(BaseModel):

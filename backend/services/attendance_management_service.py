@@ -307,6 +307,10 @@ def _stored_attendance_row(
     }
     if upload_id:
         out["upload_id"] = upload_id
+    remarks = row.get("remarks")
+    if remarks is not None:
+        text = str(remarks).strip()
+        out["remarks"] = text if text else None
     return out
 
 
@@ -430,17 +434,68 @@ def serialize_attendance_row(
         "time_value": float(row.get("time_value") or calculated["time_value"]),
         "status": status,
         "status_ot_sf": status_ot_sf,
+        "remarks": row.get("remarks"),
     }
 
 
-def update_attendance(payload: Dict[str, Any], supabase: SupabaseRest) -> Dict[str, Any]:
+def _existing_attendance_row(
+    employee_id: str, day: date, supabase: SupabaseRest
+) -> Optional[Dict[str, Any]]:
+    rows = supabase.select(
+        table="attendance",
+        select="check_in,check_out,remarks",
+        where_eq={"employee_id": employee_id, "date": day.isoformat()},
+        limit=1,
+    )
+    return rows[0] if rows else None
+
+
+def _times_changed(
+    existing: Optional[Dict[str, Any]],
+    in_time: Optional[str],
+    out_time: Optional[str],
+) -> bool:
+    old_in = _format_time(existing.get("check_in")) if existing else None
+    old_out = _format_time(existing.get("check_out")) if existing else None
+    return (in_time or None) != (old_in or None) or (out_time or None) != (old_out or None)
+
+
+def update_attendance(
+    payload: Dict[str, Any],
+    supabase: SupabaseRest,
+    *,
+    actor_role: Optional[str] = None,
+) -> Dict[str, Any]:
     employee_id = str(payload["employee_id"])
     day = date.fromisoformat(str(payload["date"])[:10])
+    in_time = _format_time(payload.get("in_time"))
+    out_time = _format_time(payload.get("out_time"))
+    remarks_raw = payload.get("remarks")
+    remarks = str(remarks_raw).strip() if remarks_raw is not None else None
+    if remarks == "":
+        remarks = None
+
+    existing = _existing_attendance_row(employee_id, day, supabase)
+    times_changed = _times_changed(existing, in_time, out_time)
+
+    if times_changed and actor_role != "master_admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only Master Admin may manually set or change In/Out times.",
+        )
+    if times_changed and (in_time or out_time) and not remarks:
+        raise HTTPException(
+            status_code=400,
+            detail="Remarks are required when manually entering or changing In/Out times.",
+        )
+    if not times_changed and remarks is None and existing and existing.get("remarks"):
+        remarks = existing.get("remarks")
+
     row = {
         "employee_id": employee_id,
         "date": day.isoformat(),
-        "in_time": _format_time(payload.get("in_time")),
-        "out_time": _format_time(payload.get("out_time")),
+        "in_time": in_time,
+        "out_time": out_time,
         "total_hours": payload.get("total_hours"),
         "working_hours": payload.get("working_hours"),
         "actual_hours": payload.get("actual_hours"),
@@ -449,6 +504,7 @@ def update_attendance(payload: Dict[str, Any], supabase: SupabaseRest) -> Dict[s
         "late_time": payload.get("late_time"),
         "time_value": payload.get("time_value"),
         "status_ot_sf": payload.get("status_ot_sf"),
+        "remarks": remarks,
     }
     holiday_labels = _holiday_labels_for_month(day.month, day.year, supabase)
     holiday_name = holiday_labels.get(day.isoformat())
