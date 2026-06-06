@@ -52,8 +52,9 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (hasSession && redirectIfAuthedRoutes.has(pathname)) {
-    const dest = token ? dashboardPathForJwtRole(roleFromAuthToken(token)) : "/dashboard";
+  /** Session flag alone (no JWT) must not bounce /login → /dashboard — client has no token to hydrate. */
+  if (token && redirectIfAuthedRoutes.has(pathname)) {
+    const dest = dashboardPathForJwtRole(roleFromAuthToken(token));
     return NextResponse.redirect(new URL(dest, request.url));
   }
 

@@ -37,11 +37,11 @@ export function effectiveApiBase(): string {
 }
 
 /**
- * Email approve/reject pages: call FastAPI directly from the browser when origins differ.
- * Skips the Vercel `/api` proxy, which can time out (~10s) while Render cold-starts (30s+).
+ * Browser auth + email flows: call FastAPI directly when the app and API are on different origins.
+ * Skips the Vercel `/api` proxy (502 / ~10s timeout) while Render cold-starts (30s+).
  * CORS on the API allows `*.vercel.app` (see backend `main.py`).
  */
-export function leaveEmailDecisionApiBase(): string {
+export function directBrowserApiBase(): string {
   const env = publicApiUrlFromEnv();
   if (typeof window === "undefined") {
     return env || "/api";
@@ -57,3 +57,6 @@ export function leaveEmailDecisionApiBase(): string {
     return "/api";
   }
 }
+
+/** @deprecated Use `directBrowserApiBase` — kept for leave email pages. */
+export const leaveEmailDecisionApiBase = directBrowserApiBase;

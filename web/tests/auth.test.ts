@@ -10,7 +10,7 @@ import {
 } from "@/lib/auth";
 
 vi.mock("@/lib/envApi", () => ({
-  effectiveApiBase: () => "http://test.local/api",
+  directBrowserApiBase: () => "http://test.local/api",
 }));
 
 const sampleUser = (role: AuthUser["role"]): AuthUser => ({

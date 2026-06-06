@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { InstallAppPrompt } from "@/components/pwa/InstallAppPrompt";
 import { DashboardAdminNavProvider } from "@/components/dashboard/DashboardAdminNavContext";
 import Header from "./Header";
@@ -10,9 +10,11 @@ import Sidebar from "./Sidebar";
 import { cn } from "@/lib/cn";
 import {
   clearAuth,
+  clearStaleSessionIfNeeded,
   dashboardPathForRole,
   getStoredToken,
   getStoredUser,
+  hasServerSessionCookie,
   isSessionFresh,
   navigateAfterAuth,
   revalidateSessionUser,
@@ -53,12 +55,16 @@ function writePersistedSidebarOpen(open: boolean) {
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   /** Start null on server and client so first paint matches (avoids hydration mismatch). */
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   const prevPathRef = useRef<string | null>(null);
+  const authRedirectRef = useRef(false);
+
+  useLayoutEffect(() => {
+    clearStaleSessionIfNeeded();
+  }, []);
 
   const isPublicRoute = useMemo(
     () => publicRoutes.has(pathname) || pathname.startsWith("/signup/verify") || isLeaveEmailPublicPath(pathname),
@@ -185,13 +191,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
         });
         return;
       }
-      router.replace("/login");
+      if (hasServerSessionCookie()) {
+        clearAuth();
+      }
+      navigateAfterAuth("/login", { force: true });
       return;
     }
-    if (user && redirectIfAuthedPublic) {
+    if (user && redirectIfAuthedPublic && !authRedirectRef.current) {
+      authRedirectRef.current = true;
       navigateAfterAuth(dashboardPathForRole(user.role), { force: true });
     }
-  }, [isPublicRoute, loadingSession, pathname, redirectIfAuthedPublic, router, user]);
+  }, [isPublicRoute, loadingSession, pathname, redirectIfAuthedPublic, user]);
 
   /** Close after route change; does not change localStorage preference. */
   const closeSidebarFromNav = useCallback(() => setIsSidebarOpen(false), []);

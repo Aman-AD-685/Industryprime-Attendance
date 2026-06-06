@@ -1,6 +1,6 @@
 "use client";
 
-import { effectiveApiBase } from "@/lib/envApi";
+import { directBrowserApiBase } from "@/lib/envApi";
 import { userFacingApiDetail } from "@/lib/userFacingError";
 
 export type Role = "master_admin" | "admin" | "user";
@@ -37,6 +37,8 @@ const SESSION_CHECKED_AT_KEY = "industryprime.sessionCheckedAt";
 
 /** Abort hung API calls so refresh never spins forever (esp. offline / wrong NEXT_PUBLIC_API_URL). */
 const AUTH_FETCH_TIMEOUT_MS = 18_000;
+/** Login/signup against Render — allow cold-start (direct browser → API, not Vercel proxy). */
+const AUTH_LOGIN_TIMEOUT_MS = 45_000;
 /** Session probe — fail fast so shell can render from cache quickly. */
 const SESSION_FETCH_TIMEOUT_MS = 8_000;
 /** Skip /auth/me when cache was validated recently (ms). */
@@ -72,6 +74,7 @@ export function hasServerSessionCookie(): boolean {
 
 function authFetchTimeoutMs(path: string): number {
   if (path === "/auth/me") return SESSION_FETCH_TIMEOUT_MS;
+  if (path.startsWith("/auth/")) return AUTH_LOGIN_TIMEOUT_MS;
   return AUTH_FETCH_TIMEOUT_MS;
 }
 
@@ -99,7 +102,7 @@ export function markSessionFresh(): void {
 }
 
 async function authRequest<T>(path: string, init: RequestInit): Promise<T> {
-  const base = effectiveApiBase().replace(/\/$/, "");
+  const base = directBrowserApiBase().replace(/\/$/, "");
   const p = path.startsWith("/") ? path : `/${path}`;
   let res: Response;
   const controller = new AbortController();
@@ -231,6 +234,13 @@ export async function storeAuth(token: string, user: AuthUser): Promise<void> {
   window.dispatchEvent(new Event("industryprime-auth-change"));
 }
 
+function unregisterServiceWorkers(): void {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  void navigator.serviceWorker.getRegistrations().then((regs) => {
+    for (const reg of regs) void reg.unregister();
+  });
+}
+
 /**
  * Full page navigation after login/signup (production-safe).
  * Uses `location.assign` so the browser sends session cookies on the next request.
@@ -252,7 +262,16 @@ export function navigateAfterAuth(path: string, options?: { force?: boolean }): 
   ) {
     return;
   }
+  unregisterServiceWorkers();
   window.location.assign(dest);
+}
+
+/** Drop stale session cookies when localStorage was cleared (breaks proxy redirect loops). */
+export function clearStaleSessionIfNeeded(): void {
+  if (typeof window === "undefined") return;
+  if (!getStoredToken() && hasServerSessionCookie()) {
+    clearAuth();
+  }
 }
 
 /** If soft navigation fails (PWA/cache), force redirect so login never sticks on "Logging in…". */

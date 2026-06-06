@@ -2,8 +2,16 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useRef, useState } from "react";
-import { dashboardPathForRole, forgotPassword, getStoredUser, login, navigateAfterAuth, scheduleAuthNavigationFallback } from "@/lib/auth";
+import { useEffect, useRef, useState } from "react";
+import {
+  clearStaleSessionIfNeeded,
+  dashboardPathForRole,
+  forgotPassword,
+  getStoredUser,
+  login,
+  navigateAfterAuth,
+  scheduleAuthNavigationFallback,
+} from "@/lib/auth";
 import { errorMessageForUser } from "@/lib/userFacingError";
 
 export default function LoginPage() {
@@ -14,6 +22,10 @@ export default function LoginPage() {
   const [resetLoading, setResetLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    clearStaleSessionIfNeeded();
+  }, []);
 
   function redirectAfterAuth() {
     const cached = getStoredUser();
@@ -45,6 +57,13 @@ export default function LoginPage() {
     setError(null);
     setInfo(null);
     let navigated = false;
+    const loadingReset = window.setTimeout(() => {
+      if (window.location.pathname.replace(/\/$/, "") === "/login") {
+        submitLock.current = false;
+        setLoading(false);
+        if (redirectAfterAuth()) return;
+      }
+    }, 4000);
     try {
       const signedIn = await login(emailTrim, password);
       const dest = dashboardPathForRole(signedIn.role);
@@ -52,10 +71,12 @@ export default function LoginPage() {
       navigateAfterAuth(dest, { force: true });
       scheduleAuthNavigationFallback(dest);
     } catch (err) {
+      window.clearTimeout(loadingReset);
       if (redirectAfterAuth()) return;
       setError(errorMessageForUser(err, "Sign-in did not complete. Please try again."));
     } finally {
       if (!navigated) {
+        window.clearTimeout(loadingReset);
         submitLock.current = false;
         setLoading(false);
       }
