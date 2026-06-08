@@ -10,14 +10,15 @@ import Sidebar from "./Sidebar";
 import { cn } from "@/lib/cn";
 import {
   clearAuth,
-  clearStaleSessionIfNeeded,
   dashboardPathForRole,
   getStoredToken,
   getStoredUser,
   hasServerSessionCookie,
   isSessionFresh,
   navigateAfterAuth,
+  reconcileClientSession,
   revalidateSessionUser,
+  syncSessionCookiesFromStorage,
   type AuthUser,
 } from "@/lib/auth";
 import { isLeaveEmailPublicPath } from "@/lib/leaveEmailPublicPaths";
@@ -63,7 +64,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const authRedirectRef = useRef(false);
 
   useLayoutEffect(() => {
-    clearStaleSessionIfNeeded();
+    reconcileClientSession();
   }, []);
 
   const isPublicRoute = useMemo(
@@ -75,6 +76,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
     () => redirectAuthedPublicRoutes.has(pathname),
     [pathname],
   );
+
+  useEffect(() => {
+    if (!redirectIfAuthedPublic) {
+      authRedirectRef.current = false;
+    }
+  }, [redirectIfAuthedPublic]);
 
   /** Hydrate session from storage before paint (server and client both start with user=null). */
   useLayoutEffect(() => {
@@ -201,13 +208,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
         return;
       }
       if (hasServerSessionCookie()) {
-        clearAuth();
+        syncSessionCookiesFromStorage();
       }
-      navigateAfterAuth("/login", { force: true });
+      if (!getStoredToken()) {
+        navigateAfterAuth("/login", { force: true });
+      }
       return;
     }
     if (user && redirectIfAuthedPublic && !authRedirectRef.current) {
       authRedirectRef.current = true;
+      syncSessionCookiesFromStorage();
       navigateAfterAuth(dashboardPathForRole(user.role), { force: true });
     }
   }, [isPublicRoute, loadingSession, pathname, redirectIfAuthedPublic, user]);

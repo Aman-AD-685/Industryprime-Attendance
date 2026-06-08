@@ -10,6 +10,7 @@ import { UpcomingPanel } from "@/components/user/UpcomingPanel";
 import { WelcomeBanner } from "@/components/user/WelcomeBanner";
 import type { MeToday } from "@/lib/api/me";
 import { useSession } from "@/lib/hooks/useSession";
+import { getStoredUser } from "@/lib/auth";
 import { useMeDashboard } from "@/lib/hooks/useTodayAttendance";
 
 const emptyToday: MeToday = {
@@ -25,6 +26,7 @@ const emptyToday: MeToday = {
 
 export default function UserDashboardPage() {
   const { user } = useSession();
+  const role = user?.role ?? getStoredUser()?.role;
   const [reducedMotion, setRm] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -50,7 +52,7 @@ export default function UserDashboardPage() {
   const lastIso = data?.updatedAt ?? null;
 
   return (
-    <RoleGuard allow={["user"]} role={user?.role} fallback={<UnauthorizedEmployeeView />}>
+    <RoleGuard allow={["user"]} role={role} fallback={<UnauthorizedEmployeeView />}>
       <div className="min-h-[calc(100vh-4rem)] bg-[#F7FAF9] pb-32 text-[#0F1F1B] motion-reduce:transition-none lg:pb-12">
         <div className="mx-auto max-w-[1100px] space-y-6">
           {isError ? (

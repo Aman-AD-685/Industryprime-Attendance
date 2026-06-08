@@ -3,8 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 
-import type { AuthUser } from "@/lib/auth";
 import { fetchMeProfile } from "@/lib/api/me";
+import { getStoredUser, type AuthUser } from "@/lib/auth";
 
 export type SessionUser = Pick<AuthUser, "id" | "name" | "email" | "role"> & {
   shift?: string | null;
@@ -12,33 +12,23 @@ export type SessionUser = Pick<AuthUser, "id" | "name" | "email" | "role"> & {
   joinedAt?: string | null;
 };
 
+function readSessionUser(): Pick<AuthUser, "id" | "name" | "email" | "role"> | null {
+  const u = getStoredUser();
+  if (!u) return null;
+  return { id: u.id, name: u.name, email: u.email, role: u.role };
+}
+
 export function useSession(): { user: SessionUser | null } {
-  const [user, setUser] = useState<Pick<AuthUser, "id" | "name" | "email" | "role"> | null>(() => {
-    try {
-      const raw = typeof window !== "undefined" ? window.localStorage.getItem("industryprime.authUser") : null;
-      if (!raw) return null;
-      const u = JSON.parse(raw) as AuthUser;
-      return { id: u.id, name: u.name, email: u.email, role: u.role };
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<Pick<AuthUser, "id" | "name" | "email" | "role"> | null>(() =>
+    typeof window === "undefined" ? null : readSessionUser(),
+  );
 
   const sync = useCallback(() => {
-    try {
-      const raw = typeof window !== "undefined" ? window.localStorage.getItem("industryprime.authUser") : null;
-      if (!raw) {
-        setUser(null);
-        return;
-      }
-      const u = JSON.parse(raw) as AuthUser;
-      setUser({ id: u.id, name: u.name, email: u.email, role: u.role });
-    } catch {
-      setUser(null);
-    }
+    setUser(readSessionUser());
   }, []);
 
   useEffect(() => {
+    sync();
     window.addEventListener("industryprime-auth-change", sync);
     return () => window.removeEventListener("industryprime-auth-change", sync);
   }, [sync]);

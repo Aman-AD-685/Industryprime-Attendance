@@ -339,12 +339,31 @@ export function navigateAfterAuth(path: string, options?: { force?: boolean }): 
   window.location.assign(dest);
 }
 
-/** Drop stale session cookies when localStorage was cleared (breaks proxy redirect loops). */
+/** Drop stale session cookies when storage was cleared (breaks proxy redirect loops). */
 export function clearStaleSessionIfNeeded(): void {
   if (typeof window === "undefined") return;
   if (!getStoredToken() && hasServerSessionCookie()) {
     clearAuth();
   }
+}
+
+/** Rewrite proxy cookies from sessionStorage so hard navigations pass `proxy.ts` gate. */
+export function syncSessionCookiesFromStorage(): void {
+  if (typeof window === "undefined") return;
+  const token = readAuthItem(TOKEN_KEY);
+  if (!token?.trim()) return;
+  if (!readCookieRaw(COOKIE_NAME)) {
+    setCookie(COOKIE_NAME, token, 60 * 60 * 8);
+  }
+  if (!readCookieRaw(SESSION_COOKIE)) {
+    setCookie(SESSION_COOKIE, "1", 60 * 60 * 8);
+  }
+}
+
+/** Run on app boot / login page — sync cookies and clear orphan session flags. */
+export function reconcileClientSession(): void {
+  syncSessionCookiesFromStorage();
+  clearStaleSessionIfNeeded();
 }
 
 /** If soft navigation fails (PWA/cache), force redirect so login never sticks on "Logging in…". */
@@ -403,11 +422,11 @@ export function setupAuthSessionMaintenance(): () => void {
   const tick = () => {
     if (!getStoredRefreshToken() && !getStoredToken()) return;
     void refreshAccessToken().then((user) => {
-      if (!user && getStoredToken()) {
-        void revalidateSessionUser().then((fresh) => {
-          if (!fresh) clearAuth();
-        });
-      }
+      if (user) return;
+      if (!getStoredToken()) return;
+      void revalidateSessionUser().then((fresh) => {
+        if (!fresh && !getStoredRefreshToken()) clearAuth();
+      });
     });
   };
 

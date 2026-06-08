@@ -4,12 +4,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import {
-  clearStaleSessionIfNeeded,
   dashboardPathForRole,
   forgotPassword,
+  getStoredToken,
   getStoredUser,
   login,
   navigateAfterAuth,
+  reconcileClientSession,
   scheduleAuthNavigationFallback,
 } from "@/lib/auth";
 import { errorMessageForUser } from "@/lib/userFacingError";
@@ -24,7 +25,11 @@ export default function LoginPage() {
   const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
-    clearStaleSessionIfNeeded();
+    reconcileClientSession();
+    const cached = getStoredUser();
+    if (cached && getStoredToken()) {
+      navigateAfterAuth(dashboardPathForRole(cached.role), { force: true });
+    }
   }, []);
 
   function redirectAfterAuth() {
