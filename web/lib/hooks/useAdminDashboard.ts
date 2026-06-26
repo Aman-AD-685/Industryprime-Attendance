@@ -23,8 +23,7 @@ export const adminDashboardKeys = {
   departments: () => [...adminDashboardKeys.all, "departments"] as const,
   late: (f: string | null) => [...adminDashboardKeys.all, "late", f ?? "all"] as const,
   leaves: () => [...adminDashboardKeys.all, "leaves"] as const,
-  approvedLeaves: (year: number, month: number) =>
-    [...adminDashboardKeys.all, "approved-leaves", year, month] as const,
+  approvedLeaves: () => [...adminDashboardKeys.all, "approved-leaves"] as const,
   audit: (limit: number) => [...adminDashboardKeys.all, "audit", limit] as const,
 };
 
@@ -74,10 +73,10 @@ export function usePendingLeaves() {
   });
 }
 
-export function useApprovedLeaves(year: number, month: number) {
+export function useApprovedLeaves() {
   return useQuery({
-    queryKey: adminDashboardKeys.approvedLeaves(year, month),
-    queryFn: () => getApprovedLeaves(year, month),
+    queryKey: adminDashboardKeys.approvedLeaves(),
+    queryFn: getApprovedLeaves,
     ...dashboardQueryDefaults,
   });
 }
@@ -118,7 +117,8 @@ export function useNotifyManyMutation() {
 export function useLeaveDecisionMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, decision }: { id: string; decision: "approve" | "reject" }) => decideLeave(id, decision),
+    mutationFn: ({ id, decision }: { id: string; decision: "approve" | "reject" | "unapprove" }) =>
+      decideLeave(id, decision),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: adminDashboardKeys.all });
     },

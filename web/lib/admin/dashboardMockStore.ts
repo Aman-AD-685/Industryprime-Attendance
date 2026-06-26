@@ -254,11 +254,9 @@ export type ApprovedLeaveRow = {
   remarks?: string | null;
 };
 
-export async function getApprovedLeaves(year: number, month: number): Promise<ApprovedLeaveRow[]> {
+export async function getApprovedLeaves(): Promise<ApprovedLeaveRow[]> {
   const params = new URLSearchParams({
     status: "approved",
-    year: String(year),
-    month: String(month),
   });
   const data = await apiFetch<ApprovedLeaveRow[]>(`/leave/requests?${params.toString()}`);
   return Array.isArray(data) ? data : [];
@@ -310,8 +308,8 @@ export async function getPendingLeaves(): Promise<LeaveRequest[]> {
   }
 }
 
-export async function decideLeave(id: string, decision: "approve" | "reject"): Promise<{ ok: boolean }> {
-  const seg = decision === "approve" ? "approved" : "rejected";
+export async function decideLeave(id: string, decision: "approve" | "reject" | "unapprove"): Promise<{ ok: boolean }> {
+  const seg = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "unapproved";
   try {
     await apiFetch(`/leave/requests/${encodeURIComponent(id)}/${seg}`, {
       method: "POST",

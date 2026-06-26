@@ -180,6 +180,15 @@ def list_leave_requests_for_tenant(
             where_eq=where_eq,
             order="created_at.desc",
         )
+        if not rows and tenant_id and status_for_db:
+            # Existing leave rows may belong to a legacy tenant id created before
+            # backend-owned auth started scoping tenant_id to the logged-in user id.
+            rows = supabase.select(
+                table="leave_requests",
+                select="*",
+                where_eq={"status": status_for_db},
+                order="created_at.desc",
+            )
     except Exception:
         # Phase 2 schema may omit leave_requests; keep UI usable.
         return []
