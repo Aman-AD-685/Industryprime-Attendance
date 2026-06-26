@@ -161,17 +161,8 @@ def list_leave_requests_for_tenant(
     if supabase is None:
         supabase = get_supabase()
 
-    where_eq: Optional[Dict[str, Any]] = None
     st = str(status or "").strip().lower()
-    status_for_db: Optional[str] = None
-    if st not in {"", "all"} and st != "rejected":
-        status_for_db = status
-    if tenant_id or status_for_db:
-        where_eq = {}
-        if status_for_db:
-            where_eq["status"] = status_for_db
-        if tenant_id:
-            where_eq["tenant_id"] = tenant_id
+    where_eq: Optional[Dict[str, Any]] = {"tenant_id": tenant_id} if tenant_id else None
 
     try:
         rows = supabase.select(
@@ -180,13 +171,13 @@ def list_leave_requests_for_tenant(
             where_eq=where_eq,
             order="created_at.desc",
         )
-        if not rows and tenant_id and status_for_db:
+        if not rows and tenant_id:
             # Existing leave rows may belong to a legacy tenant id created before
             # backend-owned auth started scoping tenant_id to the logged-in user id.
             rows = supabase.select(
                 table="leave_requests",
                 select="*",
-                where_eq={"status": status_for_db},
+                where_eq=None,
                 order="created_at.desc",
             )
     except Exception:
@@ -195,7 +186,13 @@ def list_leave_requests_for_tenant(
 
     out = rows or []
     if st == "rejected":
-        out = [r for r in out if str(r.get("status") or "").lower() in {"rejected", "unapproved"}]
+        out = [r for r in out if str(r.get("status") or "").strip().lower() in {"rejected", "unapproved"}]
+    elif st not in {"", "all"}:
+        out = [
+            r
+            for r in out
+            if str(r.get("status") or ("pending" if st == "pending" else "")).strip().lower() == st
+        ]
     eid = str(employee_id or "").strip()
     if eid:
         out = [r for r in out if str(r.get("employee_id") or "") == eid]
