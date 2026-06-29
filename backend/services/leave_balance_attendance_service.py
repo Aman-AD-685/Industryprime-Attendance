@@ -67,8 +67,12 @@ def _holiday_dates_in_range(supabase: SupabaseRest, start: date, end: date) -> S
 
 def _is_absent_status(row: Dict[str, Any]) -> bool:
     # Leave “Total Used” must match Attendance grid “Atten.” column.
-    # Attendance grid marks Absent when `status === "A"`.
-    return str(row.get("status") or "").strip().upper() == "A"
+    # Attendance grid marks Absent when `status === "A"`; stored snapshots may also
+    # carry the rendered Atten. value in `absent`.
+    return (
+        str(row.get("status") or "").strip().upper() == "A"
+        or str(row.get("absent") or "").strip().upper() == "A"
+    )
 
 
 def _fetch_attendance_month_slice(
@@ -98,19 +102,21 @@ def _leave_period_cap(
     known_dates: List[date],
 ) -> date:
     """
-    Cap leave counting at the employee's latest posted attendance DB date when rows exist,
-    so snapshot placeholder absents past that date do not inflate Total Used / YTD balance.
+    Cap leave counting at the latest Attendance grid date available, never beyond today.
+
+    `public.attendance` rows can lag behind `monthly_attendance.stored_data`; the Leave
+    page must still match the visible Attendance grid's Atten. column for all users.
     """
     dlim = min(month_end, today)
-    table_dates: List[date] = []
+    available_dates: List[date] = []
     for row in table_rows or []:
         dd = _parse_row_date(row)
         if dd is not None and month_start <= dd <= month_end:
-            table_dates.append(dd)
-    if table_dates:
-        return min(dlim, max(table_dates))
+            available_dates.append(dd)
     if known_dates:
-        return min(dlim, max(known_dates))
+        available_dates.extend(day for day in known_dates if month_start <= day <= month_end)
+    if available_dates:
+        return min(dlim, max(available_dates))
     return dlim
 
 

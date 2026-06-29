@@ -56,14 +56,27 @@ function formatAllocationYearMonth(y: number, m: number) {
   return new Date(y, m - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
 }
 
-function displayBalanceLeave(totalLeave: number | null | undefined, balanceLeave: number | null | undefined): string | number {
-  if (totalLeave == null || totalLeave <= 0) return "—";
-  if (balanceLeave == null) return "—";
-  return balanceLeave;
+function formatLeaveNumber(value: number): string | number {
+  return Number.isInteger(value) ? value : value.toFixed(1);
 }
 
-function hasBalanceLeaveAllocation(totalLeave: number | null | undefined, balanceLeave: number | null | undefined): boolean {
-  return (totalLeave ?? 0) > 0 && balanceLeave != null;
+function displayBalanceLeave(row: Pick<LeaveSummary, "total_leave" | "balance_leave" | "total_used_leave" | "lop_days">): string | number {
+  const totalLeave = row.total_leave ?? 0;
+  const balanceLeave = row.balance_leave;
+  if (totalLeave <= 0) return (row.total_used_leave ?? 0) > 0 || (row.lop_days ?? 0) > 0 ? "LOP" : 0;
+  if (balanceLeave == null) return "—";
+  return formatLeaveNumber(balanceLeave);
+}
+
+function shouldHighlightBalance(row: Pick<LeaveSummary, "total_leave" | "balance_leave">): boolean {
+  return (row.total_leave ?? 0) > 0 && row.balance_leave != null;
+}
+
+function shouldWarnBalance(row: Pick<LeaveSummary, "total_leave" | "balance_leave" | "leave_exhausted" | "lop_days">): boolean {
+  return (
+    ((row.total_leave ?? 0) <= 0 && (row.lop_days ?? 0) > 0) ||
+    (shouldHighlightBalance(row) && (Boolean(row.leave_exhausted) || (row.lop_days ?? 0) > 0))
+  );
 }
 
 function leaveStatusBadge(status: string) {
@@ -100,7 +113,7 @@ function LeaveDeductionBadges({ row }: { row: LeaveSummary }) {
       ) : null}
       {lop > 0 ? (
         <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-900 dark:bg-rose-500/20 dark:text-rose-200">
-          Loss of pay (LOP): {Number.isInteger(lop) ? lop : lop.toFixed(1)}
+          Loss of pay (LOP): {formatLeaveNumber(lop)}
         </span>
       ) : null}
     </div>
@@ -364,12 +377,9 @@ export default function LeavePage() {
                 <Metric label="Total Used (month)" value={row.total_used_leave} />
                 <Metric
                   label="Balance Leave"
-                  value={displayBalanceLeave(row.total_leave, row.balance_leave)}
-                  strong={hasBalanceLeaveAllocation(row.total_leave, row.balance_leave)}
-                  warn={
-                    hasBalanceLeaveAllocation(row.total_leave, row.balance_leave) &&
-                    (Boolean(row.leave_exhausted) || (row.lop_days ?? 0) > 0)
-                  }
+                  value={displayBalanceLeave(row)}
+                  strong={shouldHighlightBalance(row) || shouldWarnBalance(row)}
+                  warn={shouldWarnBalance(row)}
                 />
               </div>
               <LeaveDeductionBadges row={row} />
@@ -407,12 +417,9 @@ export default function LeavePage() {
             <Detail label="Total Used (month)" value={selected.total_used_leave} />
             <Detail
               label="Balance Leave"
-              value={displayBalanceLeave(selected.total_leave, selected.balance_leave)}
-              highlight={hasBalanceLeaveAllocation(selected.total_leave, selected.balance_leave)}
-              warn={
-                hasBalanceLeaveAllocation(selected.total_leave, selected.balance_leave) &&
-                (Boolean(selected.leave_exhausted) || (selected.lop_days ?? 0) > 0)
-              }
+              value={displayBalanceLeave(selected)}
+              highlight={shouldHighlightBalance(selected) || shouldWarnBalance(selected)}
+              warn={shouldWarnBalance(selected)}
             />
           </div>
           {selected.attendance_period_end ? (

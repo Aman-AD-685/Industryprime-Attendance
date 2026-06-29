@@ -12,7 +12,7 @@ from services.leave_balance_attendance_service import (
 )
 
 
-def test_period_cap_stops_at_latest_attendance_db_date() -> None:
+def test_period_cap_uses_latest_attendance_grid_date() -> None:
     month_start = date(2026, 1, 1)
     month_end = date(2026, 1, 31)
     table_rows = [{"date": "2026-01-10", "status": "P"}]
@@ -23,12 +23,18 @@ def test_period_cap_stops_at_latest_attendance_db_date() -> None:
         table_rows,
         [date(2026, 1, 31)],
     )
-    assert cap == date(2026, 1, 10)
+    assert cap == date(2026, 1, 31)
 
 
 def test_snapshot_placeholder_absent_is_counted() -> None:
     day = date(2026, 5, 5)
     row = {"date": day.isoformat(), "status": "A"}
+    assert _is_countable_leave_absent(row, day, set(), has_table_row=False) is True
+
+
+def test_snapshot_atten_absent_column_is_counted() -> None:
+    day = date(2026, 5, 5)
+    row = {"date": day.isoformat(), "status": "", "absent": "A"}
     assert _is_countable_leave_absent(row, day, set(), has_table_row=False) is True
 
 
@@ -81,3 +87,26 @@ def test_merged_count_includes_snapshot_absents() -> None:
         set(),
     )
     assert count == 2
+
+
+def test_count_absent_from_snapshot_through_today() -> None:
+    month_start = date(2026, 6, 1)
+    period_end = date(2026, 6, 29)
+    absent_days = [
+        date(2026, 6, 1),
+        date(2026, 6, 5),
+        date(2026, 6, 10),
+        date(2026, 6, 15),
+        date(2026, 6, 26),
+        date(2026, 6, 27),
+        date(2026, 6, 29),
+    ]
+    merged = {day: {"date": day.isoformat(), "absent": "A"} for day in absent_days}
+    count = _count_absent_from_merged_days(
+        merged,
+        set(),
+        month_start,
+        period_end,
+        set(),
+    )
+    assert count == 7
