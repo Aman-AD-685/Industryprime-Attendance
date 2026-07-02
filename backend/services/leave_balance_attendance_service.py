@@ -155,6 +155,23 @@ def _is_countable_leave_absent(
     return True
 
 
+def _is_present_status(row: Dict[str, Any]) -> bool:
+    """Present = Attendance grid Atten. column `P` (not leave-absent)."""
+    if _is_absent_status(row):
+        return False
+    return str(row.get("status") or "").strip().upper() == "P"
+
+
+def _is_countable_leave_present(
+    row: Dict[str, Any],
+    day: date,
+    holidays: Set[str],
+) -> bool:
+    if day.weekday() == 6 or day.isoformat() in holidays:
+        return False
+    return _is_present_status(row)
+
+
 def _count_absent_from_merged_days(
     merged: Dict[date, Dict[str, Any]],
     table_row_dates: Set[date],
@@ -174,6 +191,27 @@ def _count_absent_from_merged_days(
             holidays,
             has_table_row=day in table_row_dates,
         ):
+            continue
+        if day in seen:
+            continue
+        seen.add(day)
+        n += 1
+    return n
+
+
+def _count_present_from_merged_days(
+    merged: Dict[date, Dict[str, Any]],
+    month_start: date,
+    period_end: date,
+    holidays: Set[str],
+) -> int:
+    seen: Set[date] = set()
+    n = 0
+    for day in sorted(merged.keys()):
+        if day < month_start or day > period_end:
+            continue
+        row = merged[day]
+        if not _is_countable_leave_present(row, day, holidays):
             continue
         if day in seen:
             continue
@@ -225,27 +263,39 @@ def _holidays_for_month(
     }
 
 
-def compute_absent_leave_used_by_months(
+def compute_leave_attendance_days_by_months(
     supabase: SupabaseRest,
     employee_ids: Set[str],
     months: List[int],
     year: int,
     *,
     today: Optional[date] = None,
-) -> Tuple[Dict[int, Dict[str, int]], Dict[int, Dict[str, Optional[str]]]]:
+) -> Tuple[
+    Dict[int, Dict[str, int]],
+    Dict[int, Dict[str, int]],
+    Dict[int, Dict[str, Optional[str]]],
+]:
     """
-    Batched absent counts for multiple months (one attendance + snapshot fetch).
+    Batched present + absent counts for multiple months (one attendance + snapshot fetch).
 
-    Returns ({month: {employee_id: count}}, {month: {employee_id: period_end_iso}}).
+    Present and absent both follow Attendance grid Atten. (`status` / `absent` columns),
+    with the same period cap — matches Leave page Total Used per user.
+
+    Returns (
+        {month: {employee_id: absent_count}},
+        {month: {employee_id: present_count}},
+        {month: {employee_id: period_end_iso}},
+    ).
     """
     d = today or date.today()
     month_set = {m for m in months if 1 <= m <= 12}
-    counts_by_month: Dict[int, Dict[str, int]] = {m: {eid: 0 for eid in employee_ids} for m in month_set}
+    absent_by_month: Dict[int, Dict[str, int]] = {m: {eid: 0 for eid in employee_ids} for m in month_set}
+    present_by_month: Dict[int, Dict[str, int]] = {m: {eid: 0 for eid in employee_ids} for m in month_set}
     period_by_month: Dict[int, Dict[str, Optional[str]]] = {
         m: {eid: None for eid in employee_ids} for m in month_set
     }
     if not employee_ids or not month_set:
-        return counts_by_month, period_by_month
+        return absent_by_month, present_by_month, period_by_month
 
     sorted_months = sorted(month_set)
     range_start = date(year, sorted_months[0], 1)
@@ -254,7 +304,7 @@ def compute_absent_leave_used_by_months(
         d,
     )
     if range_start > d:
-        return counts_by_month, period_by_month
+        return absent_by_month, present_by_month, period_by_month
 
     all_holidays = _holiday_dates_in_range(supabase, range_start, range_end)
     att_rows = _fetch_attendance_month_slice(supabase, range_start, range_end)
@@ -300,16 +350,45 @@ def compute_absent_leave_used_by_months(
                 list(merged.keys()),
             )
             cap = min(cap, query_end)
-            counts_by_month[m][eid] = _count_absent_from_merged_days(
+            absent_by_month[m][eid] = _count_absent_from_merged_days(
                 merged,
                 table_dates,
                 month_start,
                 cap,
                 holidays,
             )
+            present_by_month[m][eid] = _count_present_from_merged_days(
+                merged,
+                month_start,
+                cap,
+                holidays,
+            )
             period_by_month[m][eid] = cap.isoformat() if cap >= month_start else None
 
-    return counts_by_month, period_by_month
+    return absent_by_month, present_by_month, period_by_month
+
+
+def compute_absent_leave_used_by_months(
+    supabase: SupabaseRest,
+    employee_ids: Set[str],
+    months: List[int],
+    year: int,
+    *,
+    today: Optional[date] = None,
+) -> Tuple[Dict[int, Dict[str, int]], Dict[int, Dict[str, Optional[str]]]]:
+    """
+    Batched absent counts for multiple months (one attendance + snapshot fetch).
+
+    Returns ({month: {employee_id: count}}, {month: {employee_id: period_end_iso}}).
+    """
+    absent_by_month, _, period_by_month = compute_leave_attendance_days_by_months(
+        supabase,
+        employee_ids,
+        months,
+        year,
+        today=today,
+    )
+    return absent_by_month, period_by_month
 
 
 def compute_absent_leave_used_by_employee(

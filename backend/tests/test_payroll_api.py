@@ -49,3 +49,32 @@ def test_payroll_summary_ok_with_mocks(
 def test_payslip_pdf_requires_auth(client: TestClient) -> None:
     r = client.get("/payroll/payslip-pdf?month=5&year=2026&employee_id=e1")
     assert r.status_code == 401
+
+
+def test_payslip_pdf_forbidden_for_user_role(
+    client: TestClient,
+    user_auth_headers: dict[str, str],
+) -> None:
+    r = client.get(
+        "/payroll/payslip-pdf?month=5&year=2026&employee_id=e1",
+        headers=user_auth_headers,
+    )
+    assert r.status_code == 403
+
+
+def test_payroll_summary_strips_payslip_for_user(
+    client: TestClient,
+    user_auth_headers: dict[str, str],
+    mock_supabase: object,
+) -> None:
+    payload = {
+        "month": 5,
+        "year": 2026,
+        "items": [{"employee": {"id": "emp-1"}, "payslip": {"net_pay": 9500}}],
+    }
+    with patch("routers.payroll.summarize_payroll", return_value=payload):
+        with patch("routers.payroll.get_supabase_user", return_value=mock_supabase):
+            r = client.get("/payroll/summary?month=5&year=2026", headers=user_auth_headers)
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert "payslip" not in item

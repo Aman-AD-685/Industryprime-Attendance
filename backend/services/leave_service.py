@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import calendar
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Any, Dict, List, Optional
 
 from database.supabase_client import SupabaseRest, get_supabase
+from services.hr_employees import (
+    fetch_leave_balances_for_year,
+    fetch_leave_requests_summary,
+    list_hr_employees,
+)
 
 from services.leave_balance_attendance_service import compute_absent_leave_used_by_months
 
@@ -157,32 +163,40 @@ def list_leave_requests_for_tenant(
     employee_id: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
+    limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     if supabase is None:
         supabase = get_supabase()
 
     st = str(status or "").strip().lower()
-    where_eq: Optional[Dict[str, Any]] = {"tenant_id": tenant_id} if tenant_id else None
+    row_limit = max(1, min(int(limit), 500)) if limit is not None else None
+    select_cols = (
+        "id,employee_id,employee_code,employee_name,leave_type,type,status,"
+        "leave_date_start,leave_date_end,start_date,end_date,days,reason,created_at,tenant_id"
+    )
 
-    try:
-        rows = supabase.select(
-            table="leave_requests",
-            select="*",
-            where_eq=where_eq,
-            order="created_at.desc",
-        )
-        if not rows and tenant_id:
-            # Existing leave rows may belong to a legacy tenant id created before
-            # backend-owned auth started scoping tenant_id to the logged-in user id.
-            rows = supabase.select(
+    def _fetch(where_eq: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        try:
+            return supabase.select(
                 table="leave_requests",
-                select="*",
-                where_eq=None,
+                select=select_cols,
+                where_eq=where_eq,
                 order="created_at.desc",
+                limit=row_limit,
             )
-    except Exception:
-        # Phase 2 schema may omit leave_requests; keep UI usable.
-        return []
+        except Exception:
+            return []
+
+    where_eq: Optional[Dict[str, Any]] = {"tenant_id": tenant_id} if tenant_id else None
+    if st not in {"", "all"} and st != "rejected":
+        where_eq = {**(where_eq or {}), "status": st}
+
+    rows = _fetch(where_eq)
+    if not rows and tenant_id:
+        # Existing leave rows may belong to a legacy tenant id created before
+        # backend-owned auth started scoping tenant_id to the logged-in user id.
+        legacy_where: Optional[Dict[str, Any]] = {"status": st} if st not in {"", "all"} and st != "rejected" else None
+        rows = _fetch(legacy_where)
 
     out = rows or []
     if st == "rejected":
@@ -193,6 +207,17 @@ def list_leave_requests_for_tenant(
             for r in out
             if str(r.get("status") or ("pending" if st == "pending" else "")).strip().lower() == st
         ]
+        if not out and row_limit is not None:
+            # Status casing in DB may not match `eq.pending` — bounded rescan.
+            broad_where: Optional[Dict[str, Any]] = {"tenant_id": tenant_id} if tenant_id else None
+            broad = _fetch(broad_where)
+            if not broad and tenant_id:
+                broad = _fetch(None)
+            out = [
+                r
+                for r in broad
+                if str(r.get("status") or ("pending" if st == "pending" else "")).strip().lower() == st
+            ]
     eid = str(employee_id or "").strip()
     if eid:
         out = [r for r in out if str(r.get("employee_id") or "") == eid]
@@ -253,27 +278,27 @@ def list_leave_summary(
     role: str,
     supabase: SupabaseRest,
 ) -> List[Dict[str, Any]]:
-    employees = supabase.select(
-        table="employees",
-        select="*",
-        where_eq=None,
-        order="name.asc",
-    )
-    if not _is_admin(role):
-        clean_email = user_email.strip().lower()
-        employees = [row for row in employees if str(row.get("email") or "").strip().lower() == clean_email]
+    is_admin = _is_admin(role)
+
+    def _employees() -> List[Dict[str, Any]]:
+        return list_hr_employees(supabase, user_email=user_email, admin=is_admin)
+
+    def _requests() -> List[Dict[str, Any]]:
+        return fetch_leave_requests_summary(supabase)
+
+    def _balances() -> List[Dict[str, Any]]:
+        return fetch_leave_balances_for_year(supabase, year)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        fut_emp = pool.submit(_employees)
+        fut_req = pool.submit(_requests)
+        fut_bal = pool.submit(_balances)
+        employees = fut_emp.result()
+        requests = fut_req.result()
+        balances = fut_bal.result()
+
     employee_by_id = {str(row.get("id")): row for row in employees}
     employee_by_code = {str(row.get("employee_code") or ""): row for row in employees}
-
-    try:
-        requests = supabase.select(table="leave_requests", select="*", order="created_at.desc")
-    except Exception:
-        requests = []
-
-    try:
-        balances = supabase.select(table="leave_balances", select="*", where_eq={"year": year})
-    except Exception:
-        balances = []
 
     requests_by_employee: Dict[str, List[Dict[str, Any]]] = {emp_id: [] for emp_id in employee_by_id}
     for row in requests:

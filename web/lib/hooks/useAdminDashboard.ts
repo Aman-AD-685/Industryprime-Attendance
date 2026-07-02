@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  dashboardKpiPlaceholder,
   decideLeave,
   getApprovedLeaves,
   getAudit,
@@ -14,7 +15,7 @@ import {
   notifyEmployee,
   notifyEmployees,
   restoreLastLeave,
-} from "@/lib/api/admin";
+} from "@/lib/admin/dashboardMockStore";
 
 export const adminDashboardKeys = {
   all: ["admin"] as const,
@@ -28,15 +29,17 @@ export const adminDashboardKeys = {
 };
 
 const dashboardQueryDefaults = {
-  staleTime: 120_000,
-  gcTime: 10 * 60_000,
+  staleTime: 180_000,
+  gcTime: 15 * 60_000,
   refetchOnWindowFocus: false,
+  refetchOnMount: false,
 } as const;
 
 export function useKpis() {
   return useQuery({
     queryKey: adminDashboardKeys.kpis(),
     queryFn: getKpis,
+    placeholderData: dashboardKpiPlaceholder,
     ...dashboardQueryDefaults,
   });
 }
@@ -45,6 +48,7 @@ export function useTrend(range: "14d" | "30d") {
   return useQuery({
     queryKey: adminDashboardKeys.trend(range),
     queryFn: () => getTrend(range),
+    placeholderData: () => [],
     ...dashboardQueryDefaults,
   });
 }
@@ -53,6 +57,7 @@ export function useDepartments() {
   return useQuery({
     queryKey: adminDashboardKeys.departments(),
     queryFn: getDepartments,
+    placeholderData: () => [],
     ...dashboardQueryDefaults,
   });
 }
@@ -61,6 +66,7 @@ export function useLateArrivals(filter: string | null) {
   return useQuery({
     queryKey: adminDashboardKeys.late(filter),
     queryFn: () => getLateArrivals(filter ?? undefined),
+    placeholderData: () => [],
     ...dashboardQueryDefaults,
   });
 }
@@ -69,6 +75,7 @@ export function usePendingLeaves() {
   return useQuery({
     queryKey: adminDashboardKeys.leaves(),
     queryFn: getPendingLeaves,
+    placeholderData: () => [],
     ...dashboardQueryDefaults,
   });
 }
@@ -77,6 +84,7 @@ export function useApprovedLeaves() {
   return useQuery({
     queryKey: adminDashboardKeys.approvedLeaves(),
     queryFn: getApprovedLeaves,
+    placeholderData: () => [],
     ...dashboardQueryDefaults,
   });
 }
@@ -85,6 +93,7 @@ export function useAudit(limit = 20) {
   return useQuery({
     queryKey: adminDashboardKeys.audit(limit),
     queryFn: () => getAudit(limit),
+    placeholderData: () => [],
     ...dashboardQueryDefaults,
   });
 }

@@ -49,5 +49,29 @@ def admin_auth_headers() -> Generator[dict[str, str], None, None]:
 
 
 @pytest.fixture
+def user_auth_headers() -> Generator[dict[str, str], None, None]:
+    """Bearer token for a regular user; Supabase user lookup is mocked."""
+    uid = "00000000-0000-0000-0000-000000000088"
+    profile = {
+        "id": uid,
+        "email": "ci-user@test.invalid",
+        "name": "CI User",
+        "role": "user",
+    }
+    with patch("dependencies.auth_dependency.get_user_by_id", return_value=profile):
+        from services.auth_service import create_access_token
+
+        token = create_access_token(
+            {
+                "id": uid,
+                "email": profile["email"],
+                "name": profile["name"],
+                "role": profile["role"],
+            }
+        )
+        yield {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
 def mock_supabase() -> MagicMock:
     return MagicMock(name="supabase")

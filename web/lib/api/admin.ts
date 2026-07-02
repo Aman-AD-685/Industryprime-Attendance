@@ -44,6 +44,7 @@ export type {
 
 export {
   buildTrend,
+  dashboardKpiPlaceholder,
   decideLeave,
   getApprovedLeaves,
   getAudit,

@@ -34,7 +34,7 @@ export function DashboardApproveLeaveCard({ role }: { role: Role }) {
 
   const pendingRows = pendingQ.data ?? [];
   const allowDecision = can.approveLeave(role);
-  const isLoading = pendingQ.isLoading;
+  const showSkeleton = pendingQ.isPending && pendingQ.data === undefined;
   const error = pendingQ.error;
 
   return (
@@ -55,7 +55,7 @@ export function DashboardApproveLeaveCard({ role }: { role: Role }) {
         {pendingRows.length} pending
       </p>
 
-      {isLoading ? (
+      {showSkeleton ? (
         <div className="flex flex-1 flex-col gap-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-14 w-full rounded-xl" />

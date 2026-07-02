@@ -85,6 +85,18 @@ class SupabaseRest:
             "Authorization": f"Bearer {bearer_token}",
             "Content-Type": "application/json",
         }
+        self._session = requests.Session()
+        self._session.headers.update(
+            {
+                "Connection": "keep-alive",
+                "Accept-Encoding": "gzip, deflate",
+            }
+        )
+
+    def _request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
+        headers = kwargs.pop("headers", None)
+        merged = {**self.headers, **(headers or {})}
+        return self._session.request(method, url, headers=merged, **kwargs)
 
     def _handle_response(self, resp: requests.Response) -> Any:
         try:
@@ -145,9 +157,86 @@ class SupabaseRest:
         if limit is not None and items_range is None:
             params["limit"] = limit
 
-        resp = requests.get(
+        resp = self._request(
+            "GET",
             f"{self.rest_base}/{table}",
             headers=headers,
+            params=params,
+            timeout=30,
+        )
+        data = self._handle_response(resp)
+        return data or []
+
+    def count_rows(
+        self,
+        table: str,
+        where_eq: Optional[Dict[str, Any]] = None,
+        where_gte: Optional[Dict[str, Any]] = None,
+        where_lte: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        """Cheap row count via PostgREST `Prefer: count=exact` (no full payload)."""
+        params: Dict[str, Any] = {"select": "id"}
+        headers: Dict[str, str] = {
+            **self.headers,
+            "Prefer": "count=exact",
+            "Range-Unit": "items",
+            "Range": "0-0",
+        }
+        if where_eq:
+            for k, v in where_eq.items():
+                params[k] = f"eq.{v}"
+        if where_gte:
+            for k, v in where_gte.items():
+                if k in params:
+                    existing = params[k]
+                    params[k] = [existing] if not isinstance(existing, list) else existing
+                    params[k].append(f"gte.{v}")
+                else:
+                    params[k] = f"gte.{v}"
+        if where_lte:
+            for k, v in where_lte.items():
+                if k in params:
+                    existing = params[k]
+                    params[k] = [existing] if not isinstance(existing, list) else existing
+                    params[k].append(f"lte.{v}")
+                else:
+                    params[k] = f"lte.{v}"
+
+        resp = self._request(
+            "GET",
+            f"{self.rest_base}/{table}",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        self._handle_response(resp)
+        content_range = resp.headers.get("Content-Range") or resp.headers.get("content-range") or ""
+        if "/" in content_range:
+            total = content_range.rsplit("/", 1)[-1].strip()
+            if total.isdigit():
+                return int(total)
+        return 0
+
+    def select_where_in(
+        self,
+        table: str,
+        column: str,
+        values: Iterable[Any],
+        *,
+        select: str = "*",
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        ids = [str(v).strip() for v in values if v is not None and str(v).strip()]
+        if not ids:
+            return []
+        quoted = ",".join(ids)
+        params: Dict[str, Any] = {"select": select, column: f"in.({quoted})"}
+        if limit is not None:
+            params["limit"] = limit
+        resp = self._request(
+            "GET",
+            f"{self.rest_base}/{table}",
+            headers=self.headers,
             params=params,
             timeout=30,
         )
@@ -164,7 +253,8 @@ class SupabaseRest:
         if return_representation:
             headers["Prefer"] = "return=representation"
 
-        resp = requests.post(
+        resp = self._request(
+            "POST",
             f"{self.rest_base}/{table}",
             headers=headers,
             json=rows,
@@ -187,7 +277,8 @@ class SupabaseRest:
         headers["Prefer"] = "resolution=merge-duplicates,return=representation"
         params = {"on_conflict": on_conflict}
 
-        resp = requests.post(
+        resp = self._request(
+            "POST",
             f"{self.rest_base}/{table}",
             headers=headers,
             params=params,
@@ -216,7 +307,8 @@ class SupabaseRest:
         headers = dict(self.headers)
         headers["Prefer"] = "return=representation"
 
-        resp = requests.patch(
+        resp = self._request(
+            "PATCH",
             f"{self.rest_base}/{table}",
             headers=headers,
             params=params,
@@ -239,7 +331,8 @@ class SupabaseRest:
             params[k] = f"eq.{v}"
         headers = dict(self.headers)
         headers["Prefer"] = "return=minimal"
-        resp = requests.delete(
+        resp = self._request(
+            "DELETE",
             f"{self.rest_base}/{table}",
             headers=headers,
             params=params,

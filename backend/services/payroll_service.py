@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import calendar
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Set, Tuple, Tuple
 
 from database.supabase_client import SupabaseRest, get_supabase
-from services.leave_balance_attendance_service import compute_absent_leave_used_by_months
+from services.employee_salary_history_service import resolve_salaries_for_month
+from services.hr_employees import fetch_leave_balances_for_year, list_hr_employees
+from services.leave_balance_attendance_service import compute_leave_attendance_days_by_months
 from services.leave_service import (
     LEAVE_BALANCE_ROLLING_START_MONTH,
     get_allocated_total_leave,
@@ -72,45 +75,52 @@ def summarize_payroll(
     salary_basis_days = PAYROLL_SALARY_DAYS_PER_MONTH
     actual_calendar_days_in_month = calendar.monthrange(year, month)[1]
 
-    employees = supabase.select(
-        table="employees",
-        select="*",
-        where_eq=None,
-        order="name.asc",
+    employees = list_hr_employees(
+        supabase,
+        user_email=user_email,
+        admin=_is_admin(role),
     )
-    if not _is_admin(role):
-        clean_email = user_email.strip().lower()
-        employees = [row for row in employees if str(row.get("email") or "").strip().lower() == clean_email]
 
     employee_by_id = {str(row.get("id")): row for row in employees}
     emp_id_set = set(employee_by_id.keys())
 
-    metrics_by_eid, _ = compute_payroll_attendance_metrics(
-        supabase,
-        emp_id_set,
-        month,
-        year,
-    )
-    leave_counts_by_month, _ = compute_absent_leave_used_by_months(
-        supabase,
-        emp_id_set,
-        list(range(1, month + 1)),
-        year,
-    )
-    leave_total_used_days = leave_counts_by_month.get(month, {})
-    try:
-        balance_rows = supabase.select(table="leave_balances", select="*", where_eq={"year": year})
-    except Exception:
-        balance_rows = []
+    def _load_metrics() -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+        return compute_payroll_attendance_metrics(supabase, emp_id_set, month, year)
 
+    def _load_leave_days() -> Tuple[
+        Dict[int, Dict[str, int]],
+        Dict[int, Dict[str, int]],
+        Dict[int, Dict[str, Optional[str]]],
+    ]:
+        return compute_leave_attendance_days_by_months(
+            supabase,
+            emp_id_set,
+            list(range(1, month + 1)),
+            year,
+        )
+
+    def _load_balances() -> List[Dict[str, Any]]:
+        return fetch_leave_balances_for_year(supabase, year)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        fut_metrics = pool.submit(_load_metrics)
+        fut_leave = pool.submit(_load_leave_days)
+        fut_balances = pool.submit(_load_balances)
+        metrics_by_eid, _ = fut_metrics.result()
+        leave_counts_by_month, leave_present_by_month, leave_period_by_month = fut_leave.result()
+        balance_rows = fut_balances.result()
+    leave_total_used_days = leave_counts_by_month.get(month, {})
+    leave_present_days = leave_present_by_month.get(month, {})
+    leave_period_ends = leave_period_by_month.get(month, {})
     balances_by_employee = {str(row.get("employee_id")): row for row in balance_rows}
+    salary_by_emp = resolve_salaries_for_month(supabase, employees, month, year)
 
     summaries: List[Dict[str, Any]] = []
     for emp_id, employee in employee_by_id.items():
         m = metrics_by_eid.get(emp_id, {})
-        present = int(m.get("present_days") or 0)
+        # Present + absent follow Leave page rules (Atten. column, same period cap per user).
+        present = int(leave_present_days.get(emp_id, 0))
         metrics_absent = int(m.get("absent_days") or 0)
-        # Canonical absent = Leave "Total Used" (status A, matches attendance grid / leave page).
         absent = int(leave_total_used_days.get(emp_id, 0))
         weekoff_days = int(m.get("weekoff_days") or 0)
         holiday_days = int(m.get("holiday_days") or 0)
@@ -137,11 +147,11 @@ def summarize_payroll(
         balance_leave = float(leave_snap["balance_leave"])
         month_used_leave = float(leave_snap["total_used_leave"])
 
-        monthly_salary = float(employee.get("salary_monthly") or 0)
+        monthly_salary = float(salary_by_emp.get(emp_id, employee.get("salary_monthly") or 0))
         divisor = float(salary_basis_days)
         salary_per_day = round(monthly_salary / divisor, 2) if divisor else 0
 
-        period_end_raw = m.get("attendance_period_end")
+        period_end_raw = leave_period_ends.get(emp_id) or m.get("attendance_period_end")
         period_end: date | None = None
         if period_end_raw:
             try:
@@ -200,7 +210,7 @@ def summarize_payroll(
                 "salary_eligible_days": display_salary_days,
                 "leave_covered_days": leave_covered_days,
                 "lop_days": lop_days,
-                "attendance_period_end": m.get("attendance_period_end"),
+                "attendance_period_end": leave_period_ends.get(emp_id) or m.get("attendance_period_end"),
                 "total_hours_in_office": total_hours,
                 "total_sundays": weekoff_days,
                 "holidays": holiday_days,

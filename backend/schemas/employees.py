@@ -22,6 +22,8 @@ class EmployeeCreate(BaseModel):
         ge=0,
         description="Mobile allowance per month (₹); paid in full on payslip when set (not prorated by attendance). Enter monthly salary excluding this amount when set.",
     )
+    salary_effective_month: Optional[int] = Field(default=None, ge=1, le=12)
+    salary_effective_year: Optional[int] = Field(default=None, ge=2000, le=2100)
 
 
 class EmployeeUpdate(BaseModel):
@@ -41,6 +43,8 @@ class EmployeeUpdate(BaseModel):
         ge=0,
         description="Mobile allowance per month (₹); paid in full on payslip when set (not prorated by attendance). Enter monthly salary excluding this amount when set.",
     )
+    salary_effective_month: Optional[int] = Field(default=None, ge=1, le=12)
+    salary_effective_year: Optional[int] = Field(default=None, ge=2000, le=2100)
 
 
 class EmployeeAllowancesSelfUpdate(BaseModel):
@@ -71,5 +75,10 @@ class EmployeeOut(BaseModel):
         default=None,
         description="Mobile allowance per month (₹); paid in full on payslip when set.",
     )
+    salary_effective_month: Optional[int] = None
+    salary_effective_year: Optional[int] = None
+    previous_salary_monthly: Optional[float] = None
+    previous_salary_effective_until_month: Optional[int] = None
+    previous_salary_effective_until_year: Optional[int] = None
 
     model_config = {"extra": "ignore"}

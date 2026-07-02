@@ -16,6 +16,15 @@ from services.auth_service import require_role
 router = APIRouter()
 
 
+def _strip_payslip_for_non_admin(data: Dict[str, Any], role: str) -> Dict[str, Any]:
+    if role in {"admin", "master_admin"}:
+        return data
+    for item in data.get("items") or []:
+        if isinstance(item, dict):
+            item.pop("payslip", None)
+    return data
+
+
 class PayrollGenerateRequest(BaseModel):
     period_start: date = Field(..., description="Payroll period start date")
     period_end: date = Field(..., description="Payroll period end date")
@@ -31,13 +40,14 @@ def payroll_summary(
         raise HTTPException(status_code=401, detail="Missing Authorization bearer token")
 
     auth = get_auth_context(authorization=authorization)
-    return summarize_payroll(
+    data = summarize_payroll(
         month=month,
         year=year,
         user_email=auth.email,
         role=auth.role,
         supabase=get_supabase_user(auth.access_token),
     )
+    return _strip_payslip_for_non_admin(data, auth.role)
 
 
 @router.get("/payslip-pdf")
@@ -51,6 +61,7 @@ def payroll_payslip_pdf(
         raise HTTPException(status_code=401, detail="Missing Authorization bearer token")
 
     auth = get_auth_context(authorization=authorization)
+    require_role({"role": auth.role}, "master_admin", "admin")
     supabase = get_supabase_user(auth.access_token)
     data = summarize_payroll(
         month=month,

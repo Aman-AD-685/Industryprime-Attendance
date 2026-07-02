@@ -8,8 +8,9 @@ import { cn } from "@/lib/cn";
 
 export function KpiStrip() {
   const q = useKpis();
+  const showSkeleton = q.isPending && !q.data;
 
-  if (q.isLoading || !q.data) {
+  if (showSkeleton) {
     return (
       <div className="grid w-full min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {Array.from({ length: 5 }).map((_, i) => (
@@ -23,7 +24,8 @@ export function KpiStrip() {
     );
   }
 
-  const k = q.data;
+  const k = q.data!;
+  const isRefreshing = q.isFetching && !q.isPending;
   const presentPct = k.totalEmployees ? Math.round((k.presentToday / k.totalEmployees) * 100) : 0;
   const absentTotal = k.absent;
 
@@ -77,7 +79,12 @@ export function KpiStrip() {
   ];
 
   return (
-    <div className="grid w-full min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+    <div
+      className={cn(
+        "grid w-full min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5",
+        isRefreshing && "opacity-80 transition-opacity",
+      )}
+    >
       {cards.map((c) => (
         <Card key={c.label} className="min-w-0 w-full">
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#7A8784]">{c.label}</p>

@@ -1,6 +1,6 @@
 /** Client-side store for `/dashboard` extras; KPI headcounts merge with GET /dashboard/summary when online. */
 
-import { apiFetch } from "@/lib/api";
+import { apiFetch, DASHBOARD_API_TIMEOUT_MS } from "@/lib/api";
 
 export type DashboardRole = "user" | "admin" | "master_admin";
 
@@ -66,6 +66,22 @@ function initialKpis(): KpiSnapshot {
     onApprovedLeave: 6,
     pendingLeaveRequests: 3,
     newJoinersThisMonth: 4,
+  };
+}
+
+/** Instant KPI shell while `/dashboard/summary` loads (zeros, not mock demo numbers). */
+export function dashboardKpiPlaceholder(): KpiSnapshot {
+  return {
+    totalEmployees: 0,
+    presentToday: 0,
+    absent: 0,
+    absentUnplanned: 0,
+    absentOnLeave: 0,
+    late: 0,
+    lateDeltaVsYesterday: 0,
+    onApprovedLeave: 0,
+    pendingLeaveRequests: 0,
+    newJoinersThisMonth: 0,
   };
 }
 
@@ -172,7 +188,7 @@ export async function getKpis(): Promise<KpiSnapshot> {
   s.kpis.pendingLeaveRequests = s.leaves.length;
 
   try {
-    const j = await apiFetch<ApiSummary>("/dashboard/summary");
+    const j = await apiFetch<ApiSummary>("/dashboard/summary", undefined, DASHBOARD_API_TIMEOUT_MS);
     const absent = Math.max(0, j.absent);
     const unplanned = absent <= 1 ? absent : Math.max(1, Math.floor(absent * 0.4));
     const pending =
@@ -219,7 +235,7 @@ export function buildTrend(range: "14d" | "30d"): TrendPoint[] {
 export async function getTrend(range: "14d" | "30d"): Promise<TrendPoint[]> {
   const days = range === "14d" ? 14 : 30;
   try {
-    return await apiFetch<TrendPoint[]>(`/dashboard/trend?days=${days}`);
+    return await apiFetch<TrendPoint[]>(`/dashboard/trend?days=${days}`, undefined, DASHBOARD_API_TIMEOUT_MS);
   } catch {
     await new Promise((r) => setTimeout(r, 0));
     return buildTrend(range);
@@ -228,7 +244,7 @@ export async function getTrend(range: "14d" | "30d"): Promise<TrendPoint[]> {
 
 export async function getDepartments(): Promise<DeptSlice[]> {
   try {
-    return await apiFetch<DeptSlice[]>("/dashboard/departments/present");
+    return await apiFetch<DeptSlice[]>("/dashboard/departments/present", undefined, DASHBOARD_API_TIMEOUT_MS);
   } catch {
     await new Promise((r) => setTimeout(r, 0));
     return [
@@ -267,7 +283,7 @@ export async function getLateArrivals(filter?: string | null): Promise<LateArriv
     const sp = new URLSearchParams();
     if (filter) sp.set("department", filter);
     const q = sp.toString();
-    return await apiFetch<LateArrival[]>(`/dashboard/late-today${q ? `?${q}` : ""}`);
+    return await apiFetch<LateArrival[]>(`/dashboard/late-today${q ? `?${q}` : ""}`, undefined, DASHBOARD_API_TIMEOUT_MS);
   } catch {
     await new Promise((r) => setTimeout(r, 0));
     const s = getStore().late;
@@ -297,7 +313,7 @@ export async function getPendingLeaves(): Promise<LeaveRequest[]> {
         days: number;
         reason: string;
       }[]
-    >("/dashboard/pending-leaves");
+    >("/dashboard/pending-leaves", undefined, DASHBOARD_API_TIMEOUT_MS);
     return rows.map((r) => ({
       ...r,
       type: mapLeaveType(r.type || "casual"),
@@ -379,7 +395,7 @@ let auditCache: AuditEvent[] | null = null;
 
 export async function getAudit(limit = 20): Promise<AuditEvent[]> {
   try {
-    return await apiFetch<AuditEvent[]>(`/dashboard/audit?limit=${limit}`);
+    return await apiFetch<AuditEvent[]>(`/dashboard/audit?limit=${limit}`, undefined, DASHBOARD_API_TIMEOUT_MS);
   } catch {
     await new Promise((r) => setTimeout(r, 0));
     if (!auditCache) auditCache = initialAudit();

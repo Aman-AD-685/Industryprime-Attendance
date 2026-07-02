@@ -19,4 +19,5 @@ export const can = {
   exportPayroll: (r: Role) => r === "master_admin",
   approveLeave: (r: Role) => r === "admin" || r === "master_admin",
   uploadPdf: (r: Role) => r === "admin" || r === "master_admin",
+  viewPayslip: (r: Role) => r === "admin" || r === "master_admin",
 };

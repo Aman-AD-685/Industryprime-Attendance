@@ -3,12 +3,13 @@
 import { clearAuth, getStoredToken, refreshAccessToken } from "@/lib/auth";
 import {
   DEFAULT_API_TIMEOUT_MS,
+  DASHBOARD_API_TIMEOUT_MS,
   LEAVE_API_TIMEOUT_MS,
   PAYROLL_API_TIMEOUT_MS,
   fetchWithTimeout,
 } from "@/lib/apiFetchWithTimeout";
 
-export { LEAVE_API_TIMEOUT_MS, PAYROLL_API_TIMEOUT_MS };
+export { DASHBOARD_API_TIMEOUT_MS, LEAVE_API_TIMEOUT_MS, PAYROLL_API_TIMEOUT_MS };
 import { API_BASE, effectiveApiBase } from "@/lib/envApi";
 import { userFacingApiDetail } from "@/lib/userFacingError";
 

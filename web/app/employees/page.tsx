@@ -13,6 +13,11 @@ type Employee = {
   designation?: string | null;
   email?: string | null;
   salary_monthly?: number | null;
+  salary_effective_month?: number | null;
+  salary_effective_year?: number | null;
+  previous_salary_monthly?: number | null;
+  previous_salary_effective_until_month?: number | null;
+  previous_salary_effective_until_year?: number | null;
   professional_tax?: number | null;
   pf_employee_monthly?: number | null;
   income_tax_tds_monthly?: number | null;
@@ -28,6 +33,8 @@ type EmployeeForm = {
   department: string;
   designation: string;
   salary_monthly: string;
+  salary_effective_month: string;
+  salary_effective_year: string;
   professional_tax: string;
   pf_employee_monthly: string;
   income_tax_tds_monthly: string;
@@ -43,6 +50,8 @@ const emptyForm: EmployeeForm = {
   department: "",
   designation: "",
   salary_monthly: "",
+  salary_effective_month: "",
+  salary_effective_year: "",
   professional_tax: "",
   pf_employee_monthly: "",
   income_tax_tds_monthly: "",
@@ -63,7 +72,13 @@ function strToNumNullable(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function currentMonthYear() {
+  const now = new Date();
+  return { month: String(now.getMonth() + 1), year: String(now.getFullYear()) };
+}
+
 function formFromEmployee(row: Employee): EmployeeForm {
+  const { month, year } = currentMonthYear();
   return {
     name: row.name || "",
     at_div_code: row.at_div_code || "",
@@ -71,6 +86,8 @@ function formFromEmployee(row: Employee): EmployeeForm {
     department: row.department || "",
     designation: row.designation || "",
     salary_monthly: numToStr(row.salary_monthly),
+    salary_effective_month: row.salary_effective_month != null ? String(row.salary_effective_month) : month,
+    salary_effective_year: row.salary_effective_year != null ? String(row.salary_effective_year) : year,
     professional_tax: numToStr(row.professional_tax),
     pf_employee_monthly: numToStr(row.pf_employee_monthly),
     income_tax_tds_monthly: numToStr(row.income_tax_tds_monthly),
@@ -80,16 +97,48 @@ function formFromEmployee(row: Employee): EmployeeForm {
   };
 }
 
-function isValidForm(form: EmployeeForm) {
+function salaryAmountChanged(original: Employee, form: EmployeeForm): boolean {
+  const before = original.salary_monthly ?? null;
+  const after = form.salary_monthly.trim() ? Number(form.salary_monthly) : null;
+  if (before == null && after == null) return false;
+  if (before == null || after == null) return true;
+  return Math.round(before * 100) !== Math.round(after * 100);
+}
+
+function monthYearLabel(month?: number | null, year?: number | null) {
+  if (!month || !year) return "";
+  return new Date(year, month - 1, 1).toLocaleString("en", { month: "short", year: "numeric" });
+}
+
+function formatOldSalary(row: Employee) {
+  if (row.previous_salary_monthly == null) return "—";
+  const until = monthYearLabel(row.previous_salary_effective_until_month, row.previous_salary_effective_until_year);
+  return (
+    <div>
+      <div className="font-semibold text-zinc-700 dark:text-zinc-200">
+        {Number(row.previous_salary_monthly).toLocaleString()}
+      </div>
+      {until ? <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Effective until {until}</div> : null}
+    </div>
+  );
+}
+
+function isValidForm(form: EmployeeForm, original?: Employee) {
   if (!form.name.trim()) return false;
   if (!form.at_div_code.trim()) return false;
   if (form.email.trim() && !form.email.includes("@")) return false;
   if (form.salary_monthly.trim() && Number(form.salary_monthly) < 0) return false;
+  if (original && salaryAmountChanged(original, form)) {
+    const m = Number(form.salary_effective_month);
+    const y = Number(form.salary_effective_year);
+    if (!Number.isInteger(m) || m < 1 || m > 12) return false;
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) return false;
+  }
   return true;
 }
 
-function toPayload(form: EmployeeForm) {
-  return {
+function toPayload(form: EmployeeForm, original?: Employee) {
+  const payload: Record<string, unknown> = {
     name: form.name.trim(),
     at_div_code: form.at_div_code.trim(),
     email: form.email.trim() || null,
@@ -103,6 +152,18 @@ function toPayload(form: EmployeeForm) {
     conveyance_monthly: strToNumNullable(form.conveyance_monthly),
     special_allowance_monthly: strToNumNullable(form.special_allowance_monthly),
   };
+  if (original && salaryAmountChanged(original, form)) {
+    payload.salary_effective_month = Number(form.salary_effective_month);
+    payload.salary_effective_year = Number(form.salary_effective_year);
+  } else if (!original && form.salary_monthly.trim()) {
+    const m = Number(form.salary_effective_month);
+    const y = Number(form.salary_effective_year);
+    if (Number.isInteger(m) && m >= 1 && m <= 12 && Number.isInteger(y)) {
+      payload.salary_effective_month = m;
+      payload.salary_effective_year = y;
+    }
+  }
+  return payload;
 }
 
 export default function EmployeesPage() {
@@ -111,6 +172,7 @@ export default function EmployeesPage() {
   const [query, setQuery] = useState("");
   const [form, setForm] = useState<EmployeeForm>(emptyForm);
   const [editForm, setEditForm] = useState<EmployeeForm>(emptyForm);
+  const [editOriginal, setEditOriginal] = useState<Employee | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -174,7 +236,7 @@ export default function EmployeesPage() {
   }
 
   async function saveEmployee(row: Employee) {
-    if (!row.id || !isValidForm(editForm)) return;
+    if (!row.id || !isValidForm(editForm, editOriginal ?? row)) return;
     setSaving(true);
     setError(null);
     setInfo(null);
@@ -182,10 +244,11 @@ export default function EmployeesPage() {
       const updated = await apiFetch<Employee>(`/employees/${row.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toPayload(editForm)),
+        body: JSON.stringify(toPayload(editForm, editOriginal ?? row)),
       });
       setEmployees((rows) => rows.map((item) => (item.id === updated.id ? updated : item)));
       setEditingId(null);
+      setEditOriginal(null);
       setEditForm(emptyForm);
       setInfo(`${updated.name || updated.employee_code} updated successfully.`);
     } catch (err) {
@@ -198,9 +261,16 @@ export default function EmployeesPage() {
   function startEdit(row: Employee) {
     if (!row.id) return;
     setEditingId(row.id);
+    setEditOriginal(row);
     setEditForm(formFromEmployee(row));
     setInfo(null);
     setError(null);
+  }
+
+  function openAddForm() {
+    const { month, year } = currentMonthYear();
+    setForm({ ...emptyForm, salary_effective_month: month, salary_effective_year: year });
+    setShowAddForm(true);
   }
 
   const inputClass = "w-full rounded-xl border border-zinc-200 bg-white px-2 py-1 text-sm outline-none focus:border-emerald-500/60 dark:border-zinc-800 dark:bg-zinc-900";
@@ -217,7 +287,7 @@ export default function EmployeesPage() {
             <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Search</label>
             <input type="text" placeholder="Search by code, AT-Div-Code, name..." value={query} onChange={(event) => setQuery(event.target.value)} className="mt-1 w-full rounded-2xl border border-zinc-200 bg-white/70 px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-500 focus:border-emerald-500/60 focus:ring-4 focus:ring-emerald-500/10 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-100" />
           </div>
-          {canManageEmployees && <button type="button" onClick={() => setShowAddForm((value) => !value)} className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-md">{showAddForm ? "Close" : "Add Employee"}</button>}
+          {canManageEmployees && <button type="button" onClick={() => (showAddForm ? setShowAddForm(false) : openAddForm())} className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-md">{showAddForm ? "Close" : "Add Employee"}</button>}
         </div>
       </div>
 
@@ -232,6 +302,12 @@ export default function EmployeesPage() {
             <Field label="Email"><FormInput type="email" value={form.email} placeholder="employee@company.com" onChange={(value) => setForm((state) => ({ ...state, email: value }))} /></Field>
             <Field label="Department"><FormInput value={form.department} placeholder="Operations" onChange={(value) => setForm((state) => ({ ...state, department: value }))} /></Field>
             <Field label="Monthly salary"><FormInput type="number" value={form.salary_monthly} placeholder="35000" onChange={(value) => setForm((state) => ({ ...state, salary_monthly: value }))} /></Field>
+            <Field label="Effective from (month)">
+              <FormInput type="number" min="1" max="12" value={form.salary_effective_month} placeholder="7" onChange={(value) => setForm((state) => ({ ...state, salary_effective_month: value }))} />
+            </Field>
+            <Field label="Effective from (year)">
+              <FormInput type="number" min="2000" max="2100" value={form.salary_effective_year} placeholder="2026" onChange={(value) => setForm((state) => ({ ...state, salary_effective_year: value }))} />
+            </Field>
           </div>
           <div className="mt-4"><Field label="Designation"><FormInput value={form.designation} placeholder="Supervisor" onChange={(value) => setForm((state) => ({ ...state, designation: value }))} /></Field></div>
           <div className="mt-5 rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-800 dark:bg-zinc-900/30">
@@ -260,10 +336,11 @@ export default function EmployeesPage() {
       {loading ? <LoadingCard /> : (
         <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white/70 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/40">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40"><tr>{["Code", "AT-Div-Code", "Employee", "Email", "Department", "Monthly salary", "Actions"].map((title) => <th key={title} className="px-4 py-3 font-semibold text-zinc-700 dark:text-zinc-200">{title}</th>)}</tr></thead>
+            <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40"><tr>{["Code", "AT-Div-Code", "Employee", "Email", "Department", "Monthly salary", "Old salary", "Effective from", "Actions"].map((title) => <th key={title} className="px-4 py-3 font-semibold text-zinc-700 dark:text-zinc-200">{title}</th>)}</tr></thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {filtered.map((row) => {
                 const editing = editingId === row.id;
+                const salaryChanged = editOriginal ? salaryAmountChanged(editOriginal, editForm) : false;
                 return (
                   <Fragment key={row.id || row.employee_code}>
                     <tr className="text-zinc-800 dark:text-zinc-200">
@@ -272,12 +349,43 @@ export default function EmployeesPage() {
                       <td className="px-4 py-3 align-top">{editing ? <div className="space-y-2"><input className={inputClass} value={editForm.name} onChange={(e) => setEditForm((state) => ({ ...state, name: e.target.value }))} /><input className={inputClass} placeholder="Designation" value={editForm.designation} onChange={(e) => setEditForm((state) => ({ ...state, designation: e.target.value }))} /></div> : <div><div className="font-semibold text-zinc-900 dark:text-zinc-100">{row.name || "-"}</div><div className="text-xs text-zinc-500 dark:text-zinc-400">{row.designation || "-"}</div></div>}</td>
                       <td className="px-4 py-3 align-top">{editing ? <input className={inputClass} type="email" value={editForm.email} onChange={(e) => setEditForm((state) => ({ ...state, email: e.target.value }))} /> : row.email || "-"}</td>
                       <td className="px-4 py-3 align-top">{editing ? <input className={inputClass} value={editForm.department} onChange={(e) => setEditForm((state) => ({ ...state, department: e.target.value }))} /> : row.department || "-"}</td>
-                      <td className="px-4 py-3 align-top">{editing ? <input className={inputClass} type="number" min="0" value={editForm.salary_monthly} onChange={(e) => setEditForm((state) => ({ ...state, salary_monthly: e.target.value }))} /> : row.salary_monthly != null ? <span className="font-semibold text-emerald-700 dark:text-emerald-300">{Number(row.salary_monthly).toLocaleString()}</span> : "-"}</td>
-                      <td className="px-4 py-3 align-top">{canManageEmployees && editing ? <div className="flex gap-2"><button type="button" disabled={!isValidForm(editForm) || saving} onClick={() => void saveEmployee(row)} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60">Save</button><button type="button" onClick={() => setEditingId(null)} className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">Cancel</button></div> : canManageEmployees ? <button type="button" onClick={() => startEdit(row)} className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:border-emerald-300 hover:bg-emerald-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">Edit</button> : "-"}</td>
+                      <td className="px-4 py-3 align-top">
+                        {editing ? (
+                          <input className={inputClass} type="number" min="0" value={editForm.salary_monthly} onChange={(e) => setEditForm((state) => ({ ...state, salary_monthly: e.target.value }))} />
+                        ) : row.salary_monthly != null ? (
+                          <div>
+                            <span className="font-semibold text-emerald-700 dark:text-emerald-300">{Number(row.salary_monthly).toLocaleString()}</span>
+                            {row.salary_effective_month && row.salary_effective_year ? (
+                              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">From {monthYearLabel(row.salary_effective_month, row.salary_effective_year)}</div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top">{editing ? "—" : formatOldSalary(row)}</td>
+                      <td className="px-4 py-3 align-top">{editing ? "—" : monthYearLabel(row.salary_effective_month, row.salary_effective_year) || "—"}</td>
+                      <td className="px-4 py-3 align-top">{canManageEmployees && editing ? <div className="flex gap-2"><button type="button" disabled={!isValidForm(editForm, editOriginal ?? row) || saving} onClick={() => void saveEmployee(row)} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60">Save</button><button type="button" onClick={() => { setEditingId(null); setEditOriginal(null); }} className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">Cancel</button></div> : canManageEmployees ? <button type="button" onClick={() => startEdit(row)} className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:border-emerald-300 hover:bg-emerald-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">Edit</button> : "-"}</td>
                     </tr>
                     {editing && canManageEmployees ? (
                       <tr className="bg-zinc-50/90 dark:bg-zinc-900/50">
-                        <td colSpan={7} className="px-4 py-4">
+                        <td colSpan={9} className="px-4 py-4">
+                          {salaryChanged ? (
+                            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+                              <div className="text-xs font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">Salary change — effective from</div>
+                              <p className="mt-1 text-xs text-amber-800 dark:text-amber-100">
+                                Payroll will use the new amount from this month onward. Months before that keep the previous salary.
+                              </p>
+                              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                <Field label="Effective month (1–12)">
+                                  <FormInput type="number" min="1" max="12" value={editForm.salary_effective_month} onChange={(v) => setEditForm((s) => ({ ...s, salary_effective_month: v }))} />
+                                </Field>
+                                <Field label="Effective year">
+                                  <FormInput type="number" min="2000" max="2100" value={editForm.salary_effective_year} onChange={(v) => setEditForm((s) => ({ ...s, salary_effective_year: v }))} />
+                                </Field>
+                              </div>
+                            </div>
+                          ) : null}
                           <div className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300">Payslip — admin fields</div>
                           <div className="mt-3 grid gap-3 md:grid-cols-3 lg:grid-cols-6">
                             <Field label="Professional tax (monthly)"><FormInput type="number" value={editForm.professional_tax} placeholder="Blank" onChange={(v) => setEditForm((s) => ({ ...s, professional_tax: v }))} /></Field>
@@ -301,7 +409,7 @@ export default function EmployeesPage() {
                   </Fragment>
                 );
               })}
-              {filtered.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-zinc-500 dark:text-zinc-400">No results</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-zinc-500 dark:text-zinc-400">No results</td></tr>}
             </tbody>
           </table>
         </div>
@@ -314,8 +422,32 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div><label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{label}</label><div className="mt-1">{children}</div></div>;
 }
 
-function FormInput({ value, onChange, placeholder, type = "text" }: { value: string; onChange: (value: string) => void; placeholder?: string; type?: string; }) {
-  return <input type={type} min={type === "number" ? "0" : undefined} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-2xl border border-zinc-200 bg-white/70 px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-500 focus:border-emerald-500/60 focus:ring-4 focus:ring-emerald-500/10 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-100" />;
+function FormInput({
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  min,
+  max,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+  min?: string;
+  max?: string;
+}) {
+  return (
+    <input
+      type={type}
+      min={type === "number" ? min : undefined}
+      max={type === "number" ? max : undefined}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      className="w-full rounded-2xl border border-zinc-200 bg-white/70 px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-500 focus:border-emerald-500/60 focus:ring-4 focus:ring-emerald-500/10 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-100"
+    />
+  );
 }
 
 function LoadingCard() {

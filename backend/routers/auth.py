@@ -17,8 +17,10 @@ from services.auth_service import (
     get_user_by_id,
     hash_password,
     issue_auth_tokens,
+    issue_password_reset,
     public_user,
     require_role,
+    reset_password_with_token,
     signup_user,
 )
 from services.audit_service import record_audit_event
@@ -79,6 +81,11 @@ class LoginRequest(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     email: str = Field(..., min_length=5, max_length=255)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=4096)
+    password: str = Field(..., min_length=8, max_length=128)
 
 
 class RoleUpdateRequest(BaseModel):
@@ -295,13 +302,19 @@ def me(authorization: Optional[str] = Header(default=None)):
 
 @router.post("/forgot-password", response_model=Dict[str, Any])
 def forgot_password(payload: ForgotPasswordRequest):
-    # Placeholder hook for SMTP/provider integration. Keep response generic to avoid
-    # leaking whether an email exists.
+    clean_email = _validate_email_like(payload.email)
+    issue_password_reset(clean_email)
     return {
         "ok": True,
         "message": "If an account exists, a password reset link will be sent.",
-        "email": payload.email.strip().lower(),
+        "email": clean_email,
     }
+
+
+@router.post("/reset-password", response_model=Dict[str, Any])
+def reset_password(payload: ResetPasswordRequest):
+    reset_password_with_token(payload.token, payload.password)
+    return {"ok": True, "message": "Password updated. Please sign in with your new password."}
 
 
 @router.get("/users", response_model=List[Dict[str, Any]])

@@ -558,6 +558,17 @@ export async function forgotPassword(email: string): Promise<string> {
   return data.message;
 }
 
+export async function resetPassword(token: string, password: string): Promise<string> {
+  const data = await authRequest<{ message: string }>("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+  });
+  if (data?.message == null) {
+    throw new Error("Unexpected reset-password response.");
+  }
+  return data.message;
+}
+
 export async function getCurrentUser(options?: { force?: boolean }): Promise<AuthUser> {
   const token = getStoredToken();
   if (!token) throw new Error("Not authenticated");

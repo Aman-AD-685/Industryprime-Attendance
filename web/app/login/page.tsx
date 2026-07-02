@@ -5,7 +5,6 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import {
   dashboardPathForRole,
-  forgotPassword,
   getStoredToken,
   getStoredUser,
   login,
@@ -20,7 +19,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
@@ -85,24 +83,6 @@ export default function LoginPage() {
         submitLock.current = false;
         setLoading(false);
       }
-    }
-  }
-
-  async function onForgotPassword() {
-    setError(null);
-    setInfo(null);
-    const emailTrim = email.trim();
-    if (!emailTrim.includes("@")) {
-      setError("Enter your email first.");
-      return;
-    }
-    setResetLoading(true);
-    try {
-      setInfo(await forgotPassword(emailTrim));
-    } catch (err) {
-      setError(errorMessageForUser(err, "Could not send reset instructions. Please try again."));
-    } finally {
-      setResetLoading(false);
     }
   }
 
@@ -173,14 +153,12 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 className="mt-1 w-full rounded-2xl border border-zinc-200 bg-white/80 px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-500 focus:border-emerald-500/60 focus:ring-4 focus:ring-emerald-500/10 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-100"
               />
-              <button
-                type="button"
-                onClick={() => void onForgotPassword()}
-                disabled={resetLoading}
+              <Link
+                href="/forgot-password"
                 className="mt-2 text-xs font-semibold text-zinc-500 transition hover:text-zinc-900 disabled:opacity-60 dark:text-zinc-400 dark:hover:text-zinc-50"
               >
-                {resetLoading ? "Sending reset link..." : "Forgot Password?"}
-              </button>
+                Forgot Password?
+              </Link>
             </div>
 
             {info && (

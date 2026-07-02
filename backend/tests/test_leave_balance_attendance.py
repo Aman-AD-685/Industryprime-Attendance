@@ -6,7 +6,9 @@ from datetime import date
 
 from services.leave_balance_attendance_service import (
     _count_absent_from_merged_days,
+    _count_present_from_merged_days,
     _is_countable_leave_absent,
+    _is_countable_leave_present,
     _leave_period_cap,
     _merge_leave_day_rows,
 )
@@ -110,3 +112,22 @@ def test_count_absent_from_snapshot_through_today() -> None:
         set(),
     )
     assert count == 7
+
+
+def test_present_counts_status_p_working_days() -> None:
+    month_start = date(2026, 6, 1)
+    period_end = date(2026, 6, 10)
+    sunday = date(2026, 6, 7)
+    merged = {
+        date(2026, 6, 2): {"date": "2026-06-02", "status": "P"},
+        date(2026, 6, 3): {"date": "2026-06-03", "status": "A"},
+        sunday: {"date": sunday.isoformat(), "status": "P"},
+    }
+    assert _count_present_from_merged_days(merged, month_start, period_end, set()) == 1
+
+
+def test_present_excludes_leave_absent_days() -> None:
+    day = date(2026, 6, 4)
+    row = {"date": day.isoformat(), "status": "P", "final_status": "Absent"}
+    assert _is_countable_leave_present(row, day, set()) is True
+    assert _is_countable_leave_absent(row, day, set(), has_table_row=True) is False

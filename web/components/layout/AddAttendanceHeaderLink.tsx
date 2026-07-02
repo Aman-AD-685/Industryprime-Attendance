@@ -33,9 +33,11 @@ export default function AddAttendanceHeaderLink({ variant = "default" }: AddAtte
   const [manualHref, setManualHref] = useState("/attendance-entry?from=app");
   const [open, setOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [urlLoaded, setUrlLoaded] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!open || urlLoaded) return;
     let cancelled = false;
     (async () => {
       try {
@@ -47,12 +49,14 @@ export default function AddAttendanceHeaderLink({ variant = "default" }: AddAtte
         if (!cancelled && typeof window !== "undefined") {
           setManualHref(withFromAppParam(`${window.location.origin}/attendance-entry`));
         }
+      } finally {
+        if (!cancelled) setUrlLoaded(true);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [open, urlLoaded]);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {

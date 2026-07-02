@@ -30,6 +30,7 @@ export function DashboardAuditLog() {
   }
 
   const events = q.data ?? [];
+  const showSkeleton = q.isPending && q.data === undefined;
 
   return (
     <>
@@ -41,7 +42,7 @@ export function DashboardAuditLog() {
           </Badge>
         </CardHeader>
         <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {q.isLoading
+          {showSkeleton
             ? Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="h-16 animate-pulse rounded-xl bg-[#E5EAE8]" />
               ))

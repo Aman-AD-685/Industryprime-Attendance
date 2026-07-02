@@ -7,12 +7,16 @@ import json
 import os
 import secrets
 import time
+from datetime import datetime, timedelta, timezone
+from html import escape
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
 from fastapi import HTTPException, status
 
 from database.supabase_client import SupabaseRest, _bootstrap_backend_env, get_supabase_service
+from services.email_service import send_email
+from services.public_frontend_url import public_base_url_for_email
 
 Role = Literal["master_admin", "admin", "user"]
 ALLOWED_ROLES: set[str] = {"master_admin", "admin", "user"}
@@ -20,6 +24,10 @@ _DEV_AUTH_PATH = Path(__file__).resolve().parent.parent / "database" / "dev_auth
 AUTH_SCHEMA_HINT = (
     "Auth database is not ready. Run backend/database/auth_schema.sql in the Supabase SQL Editor, "
     "then restart the backend so Supabase refreshes the users table schema."
+)
+PASSWORD_RESET_SCHEMA_HINT = (
+    "Password reset is not ready. Run backend/database/password_reset_tokens.sql in the Supabase SQL Editor, "
+    "then restart the backend so Supabase refreshes the schema."
 )
 
 
@@ -35,6 +43,10 @@ def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 210_000)
     return "pbkdf2_sha256$210000$" + base64.urlsafe_b64encode(salt).decode("ascii") + "$" + base64.urlsafe_b64encode(digest).decode("ascii")
+
+
+def _hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def verify_password(password: str, password_hash: str) -> bool:
@@ -216,6 +228,121 @@ def get_user_by_email(email: str, supabase: Optional[SupabaseRest] = None) -> Op
             ) from exc
         raise
     return rows[0] if rows else None
+
+
+def _update_dev_user_password(email: str, password: str) -> bool:
+    clean_email = normalize_email(email)
+    users = _read_dev_users()
+    changed = False
+    for user in users:
+        if user.get("email") == clean_email:
+            user["password_hash"] = hash_password(password)
+            changed = True
+            break
+    if changed:
+        _write_dev_users(users)
+    return changed
+
+
+def issue_password_reset(email: str, supabase: Optional[SupabaseRest] = None) -> None:
+    """
+    Send a one-time password reset link when the account exists.
+    Always safe to call from the API: unknown emails simply do nothing.
+    """
+    db = supabase or get_supabase_service()
+    clean_email = normalize_email(email)
+    user = get_user_by_email(clean_email, db)
+    if not user:
+        return
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = _hash_reset_token(raw_token)
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    try:
+        db.insert_many(
+            table="password_reset_tokens",
+            rows=[
+                {
+                    "user_id": str(user["id"]),
+                    "email": clean_email,
+                    "token_hash": token_hash,
+                    "expires_at": expires_at,
+                }
+            ],
+        )
+    except RuntimeError as exc:
+        msg = str(exc).lower()
+        if "password_reset_tokens" in msg or "schema cache" in msg or "could not find" in msg:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=PASSWORD_RESET_SCHEMA_HINT) from exc
+        raise
+
+    reset_url = f"{public_base_url_for_email(log_context='password_reset')}/reset-password?token={raw_token}"
+    safe_name = escape(str(user.get("name") or "there"))
+    html = f"""
+    <p>Hi {safe_name},</p>
+    <p>We received a request to reset your IndustryPrime password.</p>
+    <p><a href="{escape(reset_url)}">Reset your password</a></p>
+    <p>This link expires in 1 hour. If you did not request this, you can ignore this email.</p>
+    """
+    text = (
+        "We received a request to reset your IndustryPrime password.\n\n"
+        f"Reset your password: {reset_url}\n\n"
+        "This link expires in 1 hour. If you did not request this, you can ignore this email."
+    )
+    if not send_email(clean_email, subject="Reset your IndustryPrime password", html=html, text=text):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Password reset email could not be sent. Check SMTP/Postmark configuration on the API host.",
+        )
+
+
+def reset_password_with_token(token: str, new_password: str, supabase: Optional[SupabaseRest] = None) -> None:
+    clean_token = str(token or "").strip()
+    if len(clean_token) < 20:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link.")
+    db = supabase or get_supabase_service()
+    token_hash = _hash_reset_token(clean_token)
+    try:
+        rows = db.select(
+            table="password_reset_tokens",
+            select="id,user_id,email,expires_at,used_at",
+            where_eq={"token_hash": token_hash},
+            limit=1,
+        )
+    except RuntimeError as exc:
+        msg = str(exc).lower()
+        if "password_reset_tokens" in msg or "schema cache" in msg or "could not find" in msg:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=PASSWORD_RESET_SCHEMA_HINT) from exc
+        raise
+
+    row = rows[0] if rows else None
+    if not row or row.get("used_at"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link.")
+
+    try:
+        expires_at = datetime.fromisoformat(str(row.get("expires_at") or "").replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link.") from exc
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link.")
+
+    password_hash = hash_password(new_password)
+    user_id = str(row.get("user_id") or "")
+    updated = db.update_single(
+        table="users",
+        payload={"password_hash": password_hash},
+        where_eq={"id": user_id},
+    )
+    if not updated and _allow_local_auth_fallback():
+        updated = {"ok": _update_dev_user_password(str(row.get("email") or ""), new_password)}
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link.")
+
+    db.update_single(
+        table="password_reset_tokens",
+        payload={"used_at": datetime.now(timezone.utc).isoformat()},
+        where_eq={"id": str(row["id"])},
+    )
 
 
 def get_user_by_id(user_id: str, supabase: Optional[SupabaseRest] = None) -> Optional[Dict[str, Any]]:

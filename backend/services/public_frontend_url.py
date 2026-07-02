@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Used only when the process runs on a known managed host and no URL env is set.
 # Override with FALLBACK_EMAIL_FRONTEND_URL for other deployments.
-_DEFAULT_MANAGED_FALLBACK = "https://industryprime-attendance.vercel.app"
+_DEFAULT_MANAGED_FALLBACK = "https://industryprime.vercel.app"
 
 
 def _is_loopback_origin(url: str) -> bool:

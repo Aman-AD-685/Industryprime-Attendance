@@ -5,9 +5,16 @@ import { isLeaveEmailPublicPath } from "@/lib/leaveEmailPublicPaths";
 const AUTH_COOKIE = "industryprime_token";
 const SESSION_COOKIE = "industryprime_session";
 /** Paths reachable without a session cookie (includes public attendance entry). */
-const publicUnauthenticatedRoutes = new Set(["/login", "/signup", "/attendance-entry", "/attendance-upload"]);
+const publicUnauthenticatedRoutes = new Set([
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/reset-password",
+  "/attendance-entry",
+  "/attendance-upload",
+]);
 /** Logged-in users are redirected away from these (not from `/attendance-entry`). */
-const redirectIfAuthedRoutes = new Set(["/login", "/signup"]);
+const redirectIfAuthedRoutes = new Set(["/login", "/signup", "/forgot-password", "/reset-password"]);
 
 function isPublicUnauthenticatedPath(pathname: string): boolean {
   if (publicUnauthenticatedRoutes.has(pathname)) return true;
@@ -86,5 +93,7 @@ export const config = {
     "/settings/:path*",
     "/login",
     "/signup",
+    "/forgot-password",
+    "/reset-password",
   ],
 };

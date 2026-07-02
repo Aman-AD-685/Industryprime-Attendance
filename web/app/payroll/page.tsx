@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, apiFetchBlob, PAYROLL_API_TIMEOUT_MS } from "@/lib/api";
+import { getStoredUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+import { useSession } from "@/lib/hooks/useSession";
 
 type Employee = {
   id: string;
@@ -376,6 +379,10 @@ function PayslipDocument({
 }
 
 export default function PayrollPage() {
+  const { user } = useSession();
+  const role = user?.role ?? getStoredUser()?.role ?? "user";
+  const canViewPayslip = can.viewPayslip(role);
+
   const now = useMemo(() => new Date(), []);
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -463,8 +470,14 @@ export default function PayrollPage() {
             aria-label="How payroll period and salary basis work"
           >
             <p className="m-0">
-              Payslip for the month selected above. Use Previous / Next or the month picker to change the period. Salary
-              per-day and proration use a <strong className="font-semibold text-zinc-950 dark:text-zinc-50">30-day</strong>{" "}
+              {canViewPayslip ? (
+                <>
+                  Payslip for the month selected above. Use Previous / Next or the month picker to change the period.
+                </>
+              ) : (
+                <>Attendance and leave summary for the month selected above.</>
+              )}{" "}
+              Salary per-day and proration use a <strong className="font-semibold text-zinc-950 dark:text-zinc-50">30-day</strong>{" "}
               month for every calendar month (attendance still follows real dates).{" "}
               <span className="text-zinc-700 dark:text-zinc-300">
                 Mobile allowance is the full monthly amount from the employee profile when set, not reduced by attendance.
@@ -544,15 +557,17 @@ export default function PayrollPage() {
                 <Metric tint="absent" label="LOP days" value={item.lop_days ?? item.leave?.lop_days ?? 0} />
                 <Metric label="Hours" value={item.total_hours_in_office} />
               </div>
-              <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                <Metric strong tint="neutral" label="Net pay (payslip)" value={money(item.payslip?.net_pay, false)} />
-              </div>
+              {canViewPayslip ? (
+                <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                  <Metric strong tint="neutral" label="Net pay (payslip)" value={money(item.payslip?.net_pay, false)} />
+                </div>
+              ) : null}
             </button>
           ))}
         </div>
       )}
 
-      {selected && selected.payslip && (
+      {canViewPayslip && selected && selected.payslip && (
         <div className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -18,50 +19,61 @@ def get_dashboard_summary(
     if supabase is None:
         supabase = get_supabase()
     d = for_date or date.today()
+    ds = str(d)
     _ = tenant_id  # Phase 2 tables are not tenant-scoped in SQL; param kept for API compatibility.
 
-    employees_data = supabase.select(
-        table="employees",
-        select="id",
-        where_eq=None,
-        limit=None,
-    )
-    total_employees = len(employees_data)
+    def _employee_count() -> int:
+        try:
+            return supabase.count_rows(table="employees")
+        except Exception:
+            rows = supabase.select(table="employees", select="id", limit=5000)
+            return len(rows or [])
 
-    try:
-        attendance_data = supabase.select(
-            table="attendance",
-            select="employee_id,late_minutes",
-            where_eq={"date": str(d)},
-            limit=None,
-        )
-    except RuntimeError:
-        attendance_data = []
+    def _attendance_today() -> List[Dict[str, Any]]:
+        try:
+            return supabase.select(
+                table="attendance",
+                select="employee_id,late_minutes",
+                where_eq={"date": ds},
+                limit=5000,
+            )
+        except RuntimeError:
+            return []
+
+    def _link_today() -> List[Dict[str, Any]]:
+        try:
+            return supabase.select(
+                table="attendance_link_entries",
+                select="user_id",
+                where_eq={"date": ds},
+                limit=500,
+            )
+        except RuntimeError:
+            return []
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        fut_emp = pool.submit(_employee_count)
+        fut_att = pool.submit(_attendance_today)
+        fut_links = pool.submit(_link_today)
+        fut_pending = pool.submit(_count_pending_leave_requests, supabase, tenant_id)
+        total_employees = fut_emp.result()
+        attendance_data = fut_att.result()
+        link_rows = fut_links.result()
+        pending_leave_requests = fut_pending.result()
 
     present_ids: Set[str] = set()
     for r in attendance_data:
         eid = r.get("employee_id")
         if eid:
             present_ids.add(str(eid))
-    try:
-        link_rows = supabase.select(
-            table="attendance_link_entries",
-            select="user_id",
-            where_eq={"date": str(d)},
-            limit=500,
-        )
-        for r in link_rows or []:
-            uid = r.get("user_id")
-            if uid:
-                present_ids.add(str(uid))
-    except RuntimeError:
-        pass
+    for r in link_rows or []:
+        uid = r.get("user_id")
+        if uid:
+            present_ids.add(str(uid))
 
     present_today = len(present_ids)
     late = sum(1 for r in attendance_data if (r.get("late_minutes") or 0) > 0)
     absent = max(0, total_employees - present_today)
-
-    pending_leave_requests = _count_pending_leave_requests(supabase, tenant_id)
 
     return {
         "total_employees": total_employees,
@@ -82,10 +94,13 @@ def _count_pending_leave_requests(supabase: SupabaseRest, tenant_id: Optional[st
         if where is None:
             continue
         try:
-            rows = supabase.select(table="leave_requests", select="id", where_eq=where, limit=500)
-            return len(rows or [])
+            return supabase.count_rows(table="leave_requests", where_eq=where)
         except Exception:
-            continue
+            try:
+                rows = supabase.select(table="leave_requests", select="id", where_eq=where, limit=500)
+                return len(rows or [])
+            except Exception:
+                continue
     return 0
 
 
@@ -130,8 +145,11 @@ def get_attendance_trend(
     end = date.today()
     start = end - timedelta(days=days - 1)
 
-    employees_data = supabase.select(table="employees", select="id", where_eq=None, limit=None)
-    total_employees = len(employees_data)
+    try:
+        total_employees = supabase.count_rows(table="employees")
+    except Exception:
+        employees_data = supabase.select(table="employees", select="id", limit=5000)
+        total_employees = len(employees_data or [])
 
     try:
         attendance_rows = supabase.select(
@@ -208,11 +226,11 @@ def get_department_present_today(
         return []
 
     try:
-        employees = supabase.select(
+        employees = supabase.select_where_in(
             table="employees",
+            column="id",
+            values=present_ids,
             select="id,department",
-            where_eq=None,
-            limit=None,
         )
     except RuntimeError:
         return []
@@ -280,7 +298,8 @@ def get_late_arrivals_today(
             table="attendance",
             select="id,employee_id,check_in,late_minutes,date",
             where_eq={"date": ds},
-            limit=None,
+            where_gte={"late_minutes": 1},
+            limit=500,
         )
     except RuntimeError:
         return []
@@ -289,12 +308,13 @@ def get_late_arrivals_today(
     if not late_rows:
         return []
 
+    employee_ids = {str(r.get("employee_id") or "") for r in late_rows if r.get("employee_id")}
     try:
-        employees = supabase.select(
+        employees = supabase.select_where_in(
             table="employees",
+            column="id",
+            values=employee_ids,
             select="id,name,employee_code,department",
-            where_eq=None,
-            limit=None,
         )
     except RuntimeError:
         employees = []
@@ -333,19 +353,26 @@ def get_pending_leaves_dashboard(
 ) -> List[Dict[str, Any]]:
     from services.leave_service import list_leave_requests_for_tenant
 
+    lim = max(1, min(int(limit), 200))
     rows = list_leave_requests_for_tenant(
         status="pending",
         tenant_id=tenant_id,
         supabase=supabase,
+        limit=lim,
     )
-    rows = rows[: max(1, min(int(limit), 200))]
+    rows = rows[:lim]
 
+    employee_ids = {str(r.get("employee_id") or "") for r in rows if r.get("employee_id")}
     try:
-        employees = supabase.select(
-            table="employees",
-            select="id,name,employee_code,department",
-            where_eq=None,
-            limit=None,
+        employees = (
+            supabase.select_where_in(
+                table="employees",
+                column="id",
+                values=employee_ids,
+                select="id,name,employee_code,department",
+            )
+            if employee_ids
+            else []
         )
     except RuntimeError:
         employees = []

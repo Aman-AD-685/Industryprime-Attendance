@@ -156,7 +156,7 @@ export function DashboardLateArrivalsTable() {
 
   const selected = table.getFilteredSelectedRowModel().rows.map((r) => r.original.id);
 
-  if (!lateQ.isLoading && data.length === 0) {
+  if (!lateQ.isPending && data.length === 0) {
     return (
       <Card className="min-w-0 w-full lg:col-span-7">
         <CardHeader>
@@ -215,7 +215,7 @@ export function DashboardLateArrivalsTable() {
             </tr>
           </thead>
           <tbody>
-            {lateQ.isLoading ? (
+            {lateQ.isPending && lateQ.data === undefined ? (
               <tr>
                 <td colSpan={6} className="px-3 py-8 text-center text-[#7A8784]">
                   Loading…

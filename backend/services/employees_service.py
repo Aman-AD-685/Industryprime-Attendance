@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from database.supabase_client import SupabaseRest, get_supabase
+from services.hr_employees import EMPLOYEE_HR_SELECT
 
 
 def list_employees(
@@ -20,10 +21,10 @@ def list_employees(
         supabase = get_supabase()
     return supabase.select(
         table="employees",
-        select="*",
+        select=EMPLOYEE_HR_SELECT,
         where_eq=None,
         order="name.asc",
-        limit=None,
+        limit=5000,
     )
 
 
