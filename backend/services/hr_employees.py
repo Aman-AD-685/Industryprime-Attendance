@@ -12,10 +12,9 @@ EMPLOYEE_HR_SELECT = (
     "hra_monthly,conveyance_monthly,special_allowance_monthly"
 )
 
-LEAVE_REQUEST_SUMMARY_SELECT = (
-    "id,employee_id,employee_code,employee_name,leave_type,type,status,"
-    "leave_date_start,leave_date_end,start_date,end_date,days,reason,created_at"
-)
+# Use `*` because deployed schemas may differ slightly across environments
+# (some have legacy columns, some don't). Callers only read a small shared subset.
+LEAVE_REQUEST_SUMMARY_SELECT = "*"
 
 LEAVE_BALANCE_SELECT = "employee_id,year,total_leave,allocated_leave,balance_leave"
 

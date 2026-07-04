@@ -170,10 +170,8 @@ def list_leave_requests_for_tenant(
 
     st = str(status or "").strip().lower()
     row_limit = max(1, min(int(limit), 500)) if limit is not None else None
-    select_cols = (
-        "id,employee_id,employee_code,employee_name,leave_type,type,status,"
-        "leave_date_start,leave_date_end,start_date,end_date,days,reason,created_at,tenant_id"
-    )
+    # Use `*` so list endpoints keep working across slightly different leave schema revisions.
+    select_cols = "*"
 
     def _fetch(where_eq: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
         try:
@@ -298,13 +296,19 @@ def list_leave_summary(
         balances = fut_bal.result()
 
     employee_by_id = {str(row.get("id")): row for row in employees}
-    employee_by_code = {str(row.get("employee_code") or ""): row for row in employees}
+    employee_by_code = {
+        str(row.get("employee_code") or "").strip().upper(): row
+        for row in employees
+        if str(row.get("employee_code") or "").strip()
+    }
 
     requests_by_employee: Dict[str, List[Dict[str, Any]]] = {emp_id: [] for emp_id in employee_by_id}
     for row in requests:
         emp_id = str(row.get("employee_id") or "")
-        if not emp_id and row.get("employee_code") is not None:
-            emp = employee_by_code.get(str(row.get("employee_code") or ""))
+        code_key = str(row.get("employee_code") or "").strip().upper()
+        if (not emp_id or emp_id not in requests_by_employee) and code_key:
+            # Legacy/migrated leave rows may carry a stale employee_id but the correct employee_code.
+            emp = employee_by_code.get(code_key)
             emp_id = str(emp.get("id")) if emp else ""
         if emp_id in requests_by_employee:
             requests_by_employee[emp_id].append(row)

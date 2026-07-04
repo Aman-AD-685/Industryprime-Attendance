@@ -9,6 +9,7 @@ type LeaveRequest = {
   employee_code?: string;
   leave_date_start?: string;
   leave_date_end?: string;
+  created_at?: string;
   leave_type?: string;
   reason?: string;
   status?: string;
@@ -79,6 +80,26 @@ function shouldWarnBalance(row: Pick<LeaveSummary, "total_leave" | "balance_leav
   );
 }
 
+function parseDateRank(value?: string) {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function formatDateText(value?: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10) || "-";
+  return date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatLeaveRange(request: LeaveRequest) {
+  const start = formatDateText(request.leave_date_start);
+  const endRaw = request.leave_date_end;
+  if (!endRaw || String(endRaw).slice(0, 10) === String(request.leave_date_start || "").slice(0, 10)) return start;
+  return `${start} -> ${formatDateText(endRaw)}`;
+}
+
 function leaveStatusBadge(status: string) {
   const s = status.toLowerCase();
   if (s === "approved")
@@ -135,9 +156,18 @@ export default function LeavePage() {
   const [info, setInfo] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const canManage = currentUser?.role === "master_admin" || currentUser?.role === "admin";
   const canEditLeaveAllocation = currentUser?.role === "master_admin";
   const selected = rows.find((row) => row.employee.id === selectedId) || rows[0] || null;
+  const selectedRecentRequests = useMemo(() => {
+    if (!selected?.requests?.length) return [];
+    return [...selected.requests]
+      .sort((a, b) => {
+        const byCreated = parseDateRank(b.created_at) - parseDateRank(a.created_at);
+        if (byCreated !== 0) return byCreated;
+        return parseDateRank(b.leave_date_start) - parseDateRank(a.leave_date_start);
+      })
+      .slice(0, 5);
+  }, [selected]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -429,24 +459,29 @@ export default function LeavePage() {
           ) : null}
           <LeaveDeductionBadges row={selected} />
 
-          {!canManage && (
-            <div className="mt-6 space-y-3">
-              <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">My Leave Status</h4>
-              {selected.requests.length === 0 ? (
-                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-400">No leave requests found.</div>
-              ) : (
-                selected.requests.map((request) => {
-                  const rawStatus = (request.status || "pending").toLowerCase();
-                  const displayStatus = rawStatus.replace("unapproved", "rejected");
-                  return (
+          <div className="mt-6 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Last 5 Applied Leaves</h4>
+              {selected.requests.length > 5 ? (
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">Showing latest 5 of {selected.requests.length}</span>
+              ) : null}
+            </div>
+            {selectedRecentRequests.length === 0 ? (
+              <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-400">No leave requests found.</div>
+            ) : (
+              selectedRecentRequests.map((request) => {
+                const rawStatus = (request.status || "pending").toLowerCase();
+                const displayStatus = rawStatus.replace("unapproved", "rejected");
+                return (
                   <div key={request.id} className="flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white/70 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                        {(request.leave_date_start || "-") + (request.leave_date_end ? ` -> ${request.leave_date_end}` : "")}
-                      </div>
+                      <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{formatLeaveRange(request)}</div>
                       {leaveStatusBadge(displayStatus)}
                     </div>
-                    <div className="text-xs text-zinc-500 dark:text-zinc-400">{request.leave_type || "Leave"}</div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                      <span>Type: {request.leave_type || "Leave"}</span>
+                      <span>Applied on: {formatDateText(request.created_at)}</span>
+                    </div>
                     {request.reason && <div className="text-xs text-zinc-600 dark:text-zinc-300">Reason: {request.reason}</div>}
                     {request.remarks && <div className="text-xs text-zinc-600 dark:text-zinc-300">Decision note: {request.remarks}</div>}
                     {request.rejection_remarks && (
@@ -455,10 +490,9 @@ export default function LeavePage() {
                     {request.decided_by_email && <div className="text-xs text-zinc-500 dark:text-zinc-400">Decided by: {request.decided_by_email}</div>}
                   </div>
                 );
-                })
-              )}
-            </div>
-          )}
+              })
+            )}
+          </div>
         </div>
       )}
     </div>
