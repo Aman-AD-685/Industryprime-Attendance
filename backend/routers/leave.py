@@ -12,6 +12,7 @@ from database.supabase_client import get_supabase_service, get_supabase_user
 from dependencies.auth_dependency import get_auth_context
 from services.auth_service import require_role
 from services.decision_token_service import make_decision_token, verify_decision_token
+from services.leave_applicant_display import resolve_leave_applicant_display
 from services.leave_approver_service import can_approve_leave
 from services.leave_service import is_pending_leave_request
 from services.email_service import (
@@ -302,8 +303,7 @@ def _notify_leave_recipients(
         )
         return summary
 
-    applicant_name = str(employee.get("name") or employee.get("employee_code") or "Employee")
-    applicant_email = str(employee.get("email") or "")
+    applicant_email, applicant_name = resolve_leave_applicant_display(employee, supabase=db_lists)
     from_date = str(leave_row.get("leave_date_start") or "")
     to_date = str(leave_row.get("leave_date_end") or "")
     reason = str(leave_row.get("reason") or "")

@@ -11,6 +11,7 @@ from database.supabase_client import get_supabase_service
 from dependencies.auth_dependency import get_auth_context
 from services.audit_service import record_audit_event
 from services.decision_token_service import make_decision_token, verify_decision_token
+from services.leave_applicant_display import resolve_leave_applicant_display
 from services.email_service import render_email_template, send_email
 from services.public_frontend_url import public_base_url_for_email
 
@@ -76,8 +77,7 @@ def apply_leave(
         limit=1,
     )
     applicant = applicants[0] if applicants else {"name": auth.name, "email": auth.email}
-    applicant_name = str(applicant.get("name") or auth.name or "Applicant")
-    applicant_email = str(applicant.get("email") or auth.email)
+    applicant_email, applicant_name = resolve_leave_applicant_display(applicant, supabase=db)
 
     approval_rows = _list_recipients("approval")
     notification_rows = _list_recipients("notification")

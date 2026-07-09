@@ -23,7 +23,10 @@ def _is_missing_email_lists_table(exc: Exception) -> bool:
 
 
 def _migration_hint() -> str:
-    return "Email lists table is not migrated yet. Run backend/database/email_lists_schema.sql in Supabase SQL Editor."
+    return (
+        "Email lists table is not migrated yet. Run backend/database/email_lists_schema.sql "
+        "and backend/database/email_lists_applicant_kind.sql in Supabase SQL Editor."
+    )
 
 
 def _clean_email(email: str) -> str:
@@ -39,8 +42,11 @@ def _require_master_admin(authorization: Optional[str]) -> str:
     return auth.user_id
 
 
+_KIND_PATTERN = "^(approval|notification|applicant)$"
+
+
 class EmailListCreateIn(BaseModel):
-    kind: str = Field(..., pattern="^(approval|notification)$")
+    kind: str = Field(..., pattern=_KIND_PATTERN)
     email: str = Field(..., min_length=5, max_length=255)
     name: Optional[str] = Field(default=None, max_length=120)
 
@@ -55,7 +61,7 @@ class EmailTestIn(BaseModel):
 
 @router.get("", response_model=List[Dict[str, Any]])
 def list_email_lists(
-    kind: str = Query(..., pattern="^(approval|notification)$"),
+    kind: str = Query(..., pattern=_KIND_PATTERN),
     authorization: Optional[str] = Header(default=None),
 ):
     _require_master_admin(authorization)
@@ -79,6 +85,11 @@ def create_email_list(
     authorization: Optional[str] = Header(default=None),
 ):
     user_id = _require_master_admin(authorization)
+    if payload.kind == "applicant" and not str(payload.name or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Display name is required for leave apply mappings (e.g. Souvik Das).",
+        )
     row = {
         "kind": payload.kind,
         "email": _clean_email(payload.email),
