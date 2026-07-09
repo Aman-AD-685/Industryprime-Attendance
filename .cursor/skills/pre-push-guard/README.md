@@ -15,6 +15,8 @@ Run **Vivid Doctor** before every push:
 powershell -NoProfile -File .cursor/skills/pre-push-guard/scripts/run-production-audit.ps1
 ```
 
+**Step 2b (Ponytail):** After audit, run ponytail-review on the push diff (advisory P2/P3). See `.cursor/skills/pre-push-compound-review/PONYTAIL.md`. Does not block push.
+
 Install git hook (optional):
 
 ```powershell

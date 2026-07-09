@@ -12,6 +12,8 @@ from database.supabase_client import get_supabase_service, get_supabase_user
 from dependencies.auth_dependency import get_auth_context
 from services.auth_service import require_role
 from services.decision_token_service import make_decision_token, verify_decision_token
+from services.leave_approver_service import can_approve_leave
+from services.leave_service import is_pending_leave_request
 from services.email_service import (
     email_delivery_mode,
     postmark_token_configured,
@@ -47,10 +49,6 @@ def _safe_update_leave_request_decision(
 ) -> Dict[str, Any]:
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    base_pending: Dict[str, Any] = {"id": request_id, "status": "pending"}
-    if tenant_id:
-        base_pending["tenant_id"] = tenant_id
-
     def _rich_payload() -> Dict[str, Any]:
         out: Dict[str, Any] = {
             "status": status_value,
@@ -79,27 +77,36 @@ def _safe_update_leave_request_decision(
     attempts.append((slim, None))
     attempts.append(({"status": status_value}, None))
 
-    last_err: Optional[Exception] = None
-    for payload, wnull in attempts:
-        clean = {k: v for k, v in payload.items() if v is not None}
-        try:
-            updated = supabase.update_single(
-                table="leave_requests",
-                payload=clean,
-                where_eq=base_pending,
-                where_is_null=wnull,
-            )
-            if updated:
-                return updated
-        except Exception as exc:
-            last_err = exc
-            continue
+    base_pending_attempts: List[Dict[str, Any]] = [{"id": request_id, "status": "pending"}]
+    if tenant_id:
+        base_pending_attempts.insert(0, {"id": request_id, "status": "pending", "tenant_id": tenant_id})
 
-    rows = supabase.select(table="leave_requests", select="id,status", where_eq={"id": request_id}, limit=1)
+    last_err: Optional[Exception] = None
+    for base_pending in base_pending_attempts:
+        for payload, wnull in attempts:
+            clean = {k: v for k, v in payload.items() if v is not None}
+            try:
+                updated = supabase.update_single(
+                    table="leave_requests",
+                    payload=clean,
+                    where_eq=base_pending,
+                    where_is_null=wnull,
+                )
+                if updated:
+                    return updated
+            except Exception as exc:
+                last_err = exc
+                continue
+
+    rows = supabase.select(
+        table="leave_requests",
+        select="id,status,approved_at,approved_by,rejected_at,rejected_by,decision_token_used",
+        where_eq={"id": request_id},
+        limit=1,
+    )
     if not rows:
         raise HTTPException(status_code=404, detail="Leave request not found")
-    st = str(rows[0].get("status") or "").lower()
-    if st != "pending":
+    if not is_pending_leave_request(rows[0]):
         raise HTTPException(status_code=400, detail="Leave request already decided")
     if last_err:
         raise HTTPException(status_code=400, detail=f"Could not update leave request: {last_err}") from last_err
@@ -118,7 +125,7 @@ def _preview_leave_email_decision(*, request_id: str, token: str) -> Dict[str, A
     if not rows:
         raise HTTPException(status_code=404, detail="Leave request not found")
     leave = rows[0]
-    already_decided = str(leave.get("status") or "").lower() in {"approved", "rejected", "unapproved"}
+    already_decided = not is_pending_leave_request(leave)
     return {
         "request": leave,
         "action": payload.get("action"),
@@ -588,7 +595,15 @@ def list_requests(
         return []
 
     auth = get_auth_context(authorization=authorization)
-    require_role({"role": auth.role}, "master_admin", "admin")
+    is_admin = auth.role in {"master_admin", "admin"}
+    is_approver = can_approve_leave(role=auth.role, email=auth.email)
+    if not is_admin and not is_approver:
+        raise HTTPException(status_code=403, detail="Leave approval permission required")
+    if not is_admin:
+        status = "pending"
+        employee_id = None
+        year = None
+        month = None
     supabase = get_supabase_user(auth.access_token)
     rows = list_leave_requests_for_tenant(
         status=status,
@@ -612,7 +627,8 @@ def decide(
         raise HTTPException(status_code=401, detail="Missing Authorization bearer token")
 
     auth = get_auth_context(authorization=authorization)
-    require_role({"role": auth.role}, "master_admin", "admin")
+    if not can_approve_leave(role=auth.role, email=auth.email):
+        raise HTTPException(status_code=403, detail="Leave approval permission required")
     try:
         return decide_leave_request_for_tenant(
             request_id=request_id,
@@ -620,6 +636,7 @@ def decide(
             tenant_id=auth.tenant_id,
             supabase=get_supabase_user(auth.access_token),
             not_deducted_days=body.not_deducted_days,
+            decided_by_email=auth.email,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

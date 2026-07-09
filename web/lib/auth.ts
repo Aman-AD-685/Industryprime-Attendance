@@ -11,6 +11,8 @@ export type AuthUser = {
   email: string;
   role: Role;
   created_at?: string;
+  /** Email-list approver or admin — may approve pending leave in-app. */
+  can_approve_leave?: boolean;
 };
 
 type AuthResponse = {

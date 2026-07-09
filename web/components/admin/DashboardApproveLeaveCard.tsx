@@ -28,12 +28,18 @@ function fmtRange(from?: string | null, to?: string | null) {
   }
 }
 
-export function DashboardApproveLeaveCard({ role }: { role: Role }) {
+export function DashboardApproveLeaveCard({
+  role,
+  canApproveLeave = false,
+}: {
+  role: Role;
+  canApproveLeave?: boolean;
+}) {
   const pendingQ = usePendingLeaves();
   const decision = useLeaveDecisionMutation();
 
   const pendingRows = pendingQ.data ?? [];
-  const allowDecision = can.approveLeave(role);
+  const allowDecision = can.approveLeave(role, canApproveLeave);
   const showSkeleton = pendingQ.isPending && pendingQ.data === undefined;
   const error = pendingQ.error;
 
@@ -98,9 +104,16 @@ export function DashboardApproveLeaveCard({ role }: { role: Role }) {
                         className="h-8 px-3 py-1.5 text-xs"
                         disabled={!allowDecision || decision.isPending}
                         onClick={() =>
-                          void decision.mutateAsync({ id: row.id, decision: "approve" }).then(() => {
-                            toast.success(`${row.name}'s leave approved`);
-                          })
+                          void decision
+                            .mutateAsync({ id: row.id, decision: "approve" })
+                            .then(() => {
+                              toast.success(`${row.name}'s leave approved`);
+                            })
+                            .catch((err: unknown) => {
+                              toast.error(
+                                err instanceof Error ? err.message : "Could not approve leave",
+                              );
+                            })
                         }
                       >
                         Approve

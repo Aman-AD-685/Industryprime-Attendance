@@ -8,6 +8,7 @@ import { RoleGuard, UnauthorizedEmployeeView } from "@/components/user/RoleGuard
 import { TodayCard } from "@/components/user/TodayCard";
 import { UpcomingPanel } from "@/components/user/UpcomingPanel";
 import { WelcomeBanner } from "@/components/user/WelcomeBanner";
+import { DashboardApproveLeaveCard } from "@/components/admin/DashboardApproveLeaveCard";
 import type { MeToday } from "@/lib/api/me";
 import { useSession } from "@/lib/hooks/useSession";
 import { getStoredUser } from "@/lib/auth";
@@ -27,6 +28,7 @@ const emptyToday: MeToday = {
 export default function UserDashboardPage() {
   const { user } = useSession();
   const role = user?.role ?? getStoredUser()?.role;
+  const canApproveLeave = Boolean(user?.can_approve_leave ?? getStoredUser()?.can_approve_leave);
   const [reducedMotion, setRm] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -74,6 +76,10 @@ export default function UserDashboardPage() {
             shiftLine={shiftLine}
             reducedMotion={reducedMotion}
           />
+
+          {canApproveLeave && role ? (
+            <DashboardApproveLeaveCard role={role} canApproveLeave={canApproveLeave} />
+          ) : null}
 
           <div className="grid gap-6 lg:grid-cols-12">
             {skeleton ? (

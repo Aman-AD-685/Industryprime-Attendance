@@ -16,6 +16,7 @@ from fastapi import HTTPException, status
 
 from database.supabase_client import SupabaseRest, _bootstrap_backend_env, get_supabase_service
 from services.email_service import send_email
+from services.leave_approver_service import is_leave_approver_email
 from services.public_frontend_url import public_base_url_for_email
 
 Role = Literal["master_admin", "admin", "user"]
@@ -366,12 +367,15 @@ def get_user_by_id(user_id: str, supabase: Optional[SupabaseRest] = None) -> Opt
 
 
 def public_user(user: Dict[str, Any]) -> Dict[str, Any]:
+    role = str(user["role"])
+    email = str(user["email"])
     return {
         "id": str(user["id"]),
         "name": user["name"],
-        "email": user["email"],
-        "role": user["role"],
+        "email": email,
+        "role": role,
         "created_at": user.get("created_at"),
+        "can_approve_leave": role in {"master_admin", "admin"} or is_leave_approver_email(email),
     }
 
 

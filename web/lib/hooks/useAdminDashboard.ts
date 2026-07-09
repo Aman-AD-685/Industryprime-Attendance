@@ -15,6 +15,7 @@ import {
   notifyEmployee,
   notifyEmployees,
   restoreLastLeave,
+  type LeaveRequest,
 } from "@/lib/admin/dashboardMockStore";
 
 export const adminDashboardKeys = {
@@ -76,7 +77,11 @@ export function usePendingLeaves() {
     queryKey: adminDashboardKeys.leaves(),
     queryFn: getPendingLeaves,
     placeholderData: () => [],
-    ...dashboardQueryDefaults,
+    staleTime: 15_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: true,
+    refetchInterval: 45_000,
+    refetchOnMount: true,
   });
 }
 
@@ -128,7 +133,20 @@ export function useLeaveDecisionMutation() {
   return useMutation({
     mutationFn: ({ id, decision }: { id: string; decision: "approve" | "reject" | "unapprove" }) =>
       decideLeave(id, decision),
-    onSuccess: () => {
+    onMutate: async ({ id }) => {
+      await qc.cancelQueries({ queryKey: adminDashboardKeys.leaves() });
+      const previous = qc.getQueryData<LeaveRequest[]>(adminDashboardKeys.leaves());
+      qc.setQueryData<LeaveRequest[]>(adminDashboardKeys.leaves(), (rows) =>
+        (rows ?? []).filter((row) => row.id !== id),
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        qc.setQueryData(adminDashboardKeys.leaves(), context.previous);
+      }
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: adminDashboardKeys.all });
     },
   });

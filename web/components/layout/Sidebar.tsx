@@ -40,11 +40,16 @@ type NavItem = {
 export default function Sidebar({ isOpen, onClose, onDismiss }: SidebarProps) {
   const pathname = usePathname();
   const [role, setRole] = useState<Role | null>(null);
+  const [canApproveLeave, setCanApproveLeave] = useState(false);
   const asideRef = useRef<HTMLElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    const syncRole = () => setRole(getStoredUser()?.role ?? null);
+    const syncRole = () => {
+      const u = getStoredUser();
+      setRole(u?.role ?? null);
+      setCanApproveLeave(Boolean(u?.can_approve_leave));
+    };
     syncRole();
     window.addEventListener("industryprime-auth-change", syncRole);
     return () => window.removeEventListener("industryprime-auth-change", syncRole);
@@ -82,20 +87,24 @@ export default function Sidebar({ isOpen, onClose, onDismiss }: SidebarProps) {
   const visibleItems = useMemo(() => {
     const base = items.filter((item) => !item.roles || (role && item.roles.includes(role)));
     if (role === "user") {
-      return base.filter(
+      const userItems = base.filter(
         (item) =>
           item.href === "/dashboard" ||
           item.href === "/attendance" ||
           item.href === "/leave" ||
           item.href === "/payroll",
       );
+      if (canApproveLeave) {
+        return [{ label: "Approve leave", href: "/leave/approvals", icon: IconClipboardList }, ...userItems];
+      }
+      return userItems;
     }
     /* admin: all sections except Leave oversight (master_admin only in items). master_admin: full base. */
     if (role === "admin") {
       return base.filter((item) => item.href !== "/leave/admin");
     }
     return base;
-  }, [items, role]);
+  }, [items, role, canApproveLeave]);
 
   const navItems = useMemo(() => {
     return visibleItems.map((it) =>

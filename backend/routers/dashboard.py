@@ -12,6 +12,7 @@ from fastapi import Header, HTTPException
 from pydantic import BaseModel, Field
 
 from services.auth_service import require_role
+from services.leave_approver_service import can_approve_leave
 from services.dashboard_service import (
     get_attendance_trend,
     get_audit_events_dashboard,
@@ -98,7 +99,8 @@ def dashboard_pending_leaves(
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization bearer token")
     auth = get_auth_context(authorization=authorization)
-    require_role({"role": auth.role}, "master_admin", "admin")
+    if not can_approve_leave(role=auth.role, email=auth.email):
+        raise HTTPException(status_code=403, detail="Leave approval permission required")
     return get_pending_leaves_dashboard(
         tenant_id=auth.tenant_id,
         supabase=get_supabase_user(auth.access_token),

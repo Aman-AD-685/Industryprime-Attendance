@@ -17,7 +17,8 @@ export const can = {
   manageRoles: (r: Role) => r === "master_admin",
   deleteEmployee: (r: Role) => r === "master_admin",
   exportPayroll: (r: Role) => r === "master_admin",
-  approveLeave: (r: Role) => r === "admin" || r === "master_admin",
+  approveLeave: (r: Role, canApproveLeave = false) =>
+    r === "admin" || r === "master_admin" || canApproveLeave,
   uploadPdf: (r: Role) => r === "admin" || r === "master_admin",
   viewPayslip: (r: Role) => r === "admin" || r === "master_admin",
 };

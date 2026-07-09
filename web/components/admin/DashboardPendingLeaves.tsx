@@ -24,11 +24,17 @@ function fmtRange(from: string, to: string) {
   }
 }
 
-export function DashboardPendingLeaves({ role }: { role: Role }) {
+export function DashboardPendingLeaves({
+  role,
+  canApproveLeave = false,
+}: {
+  role: Role;
+  canApproveLeave?: boolean;
+}) {
   const q = usePendingLeaves();
   const decision = useLeaveDecisionMutation();
 
-  const allow = can.approveLeave(role);
+  const allow = can.approveLeave(role, canApproveLeave);
 
   if (!q.data?.length) {
     return (
@@ -77,9 +83,14 @@ export function DashboardPendingLeaves({ role }: { role: Role }) {
                     className="h-9 px-3 py-2 text-xs"
                     disabled={!allow || decision.isPending}
                     onClick={() =>
-                      void decision.mutateAsync({ id: lv.id, decision: "approve" }).then(() => {
-                        toast.success(`${lv.name}'s leave approved`);
-                      })
+                      void decision
+                        .mutateAsync({ id: lv.id, decision: "approve" })
+                        .then(() => {
+                          toast.success(`${lv.name}'s leave approved`);
+                        })
+                        .catch((err: unknown) => {
+                          toast.error(err instanceof Error ? err.message : "Could not approve leave");
+                        })
                     }
                   >
                     Approve
@@ -89,9 +100,14 @@ export function DashboardPendingLeaves({ role }: { role: Role }) {
                     className="h-9 px-3 py-2 text-xs"
                     disabled={!allow || decision.isPending}
                     onClick={() =>
-                      void decision.mutateAsync({ id: lv.id, decision: "reject" }).then(() => {
-                        toast.success("Leave request rejected");
-                      })
+                      void decision
+                        .mutateAsync({ id: lv.id, decision: "reject" })
+                        .then(() => {
+                          toast.success("Leave request rejected");
+                        })
+                        .catch((err: unknown) => {
+                          toast.error(err instanceof Error ? err.message : "Could not reject leave");
+                        })
                     }
                   >
                     Reject

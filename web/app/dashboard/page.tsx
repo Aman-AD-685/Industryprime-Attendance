@@ -111,7 +111,10 @@ export default function DashboardPage() {
 
         <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
           <DashboardLateArrivalsTable />
-          <DashboardApproveLeaveCard role={displayUser.role} />
+          <DashboardApproveLeaveCard
+            role={displayUser.role}
+            canApproveLeave={Boolean(displayUser.can_approve_leave)}
+          />
         </div>
 
         {can.seeAuditLog(displayUser.role) ? (

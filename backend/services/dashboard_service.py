@@ -86,22 +86,15 @@ def get_dashboard_summary(
 
 
 def _count_pending_leave_requests(supabase: SupabaseRest, tenant_id: Optional[str]) -> int:
-    attempts: List[Optional[Dict[str, Any]]] = []
-    if tenant_id:
-        attempts.append({"status": "pending", "tenant_id": tenant_id})
-    attempts.append({"status": "pending"})
-    for where in attempts:
-        if where is None:
-            continue
-        try:
-            return supabase.count_rows(table="leave_requests", where_eq=where)
-        except Exception:
-            try:
-                rows = supabase.select(table="leave_requests", select="id", where_eq=where, limit=500)
-                return len(rows or [])
-            except Exception:
-                continue
-    return 0
+    from services.leave_service import is_pending_leave_request, list_leave_requests_for_tenant
+
+    rows = list_leave_requests_for_tenant(
+        status="pending",
+        tenant_id=tenant_id,
+        supabase=supabase,
+        limit=500,
+    )
+    return len([r for r in rows if is_pending_leave_request(r)])
 
 
 def _day_present_ids(
@@ -351,7 +344,7 @@ def get_pending_leaves_dashboard(
     supabase: SupabaseRest,
     limit: int = 80,
 ) -> List[Dict[str, Any]]:
-    from services.leave_service import list_leave_requests_for_tenant
+    from services.leave_service import is_pending_leave_request, list_leave_requests_for_tenant
 
     lim = max(1, min(int(limit), 200))
     rows = list_leave_requests_for_tenant(
@@ -360,7 +353,7 @@ def get_pending_leaves_dashboard(
         supabase=supabase,
         limit=lim,
     )
-    rows = rows[:lim]
+    rows = [r for r in rows if is_pending_leave_request(r)][:lim]
 
     employee_ids = {str(r.get("employee_id") or "") for r in rows if r.get("employee_id")}
     try:

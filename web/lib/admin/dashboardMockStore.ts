@@ -300,48 +300,33 @@ function mapLeaveType(raw: string): LeaveRequest["type"] {
 }
 
 export async function getPendingLeaves(): Promise<LeaveRequest[]> {
-  try {
-    const rows = await apiFetch<
-      {
-        id: string;
-        empId: string;
-        name: string;
-        dept: string;
-        type: string;
-        from: string;
-        to: string;
-        days: number;
-        reason: string;
-      }[]
-    >("/dashboard/pending-leaves", undefined, DASHBOARD_API_TIMEOUT_MS);
-    return rows.map((r) => ({
-      ...r,
-      type: mapLeaveType(r.type || "casual"),
-    }));
-  } catch {
-    await new Promise((r) => setTimeout(r, 0));
-    return [...getStore().leaves];
-  }
+  const rows = await apiFetch<
+    {
+      id: string;
+      empId: string;
+      name: string;
+      dept: string;
+      type: string;
+      from: string;
+      to: string;
+      days: number;
+      reason: string;
+    }[]
+  >("/dashboard/pending-leaves", undefined, DASHBOARD_API_TIMEOUT_MS);
+  return rows.map((r) => ({
+    ...r,
+    type: mapLeaveType(r.type || "casual"),
+  }));
 }
 
 export async function decideLeave(id: string, decision: "approve" | "reject" | "unapprove"): Promise<{ ok: boolean }> {
   const seg = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "unapproved";
-  try {
-    await apiFetch(`/leave/requests/${encodeURIComponent(id)}/${seg}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ not_deducted_days: 0 }),
-    });
-    return { ok: true };
-  } catch {
-    const store = getStore();
-    const idx = store.leaves.findIndex((l) => l.id === id);
-    if (idx === -1) return { ok: false };
-    const [row] = store.leaves.splice(idx, 1);
-    store.leaveUndo = { t: Date.now(), row };
-    store.kpis.pendingLeaveRequests = store.leaves.length;
-    return { ok: true };
-  }
+  await apiFetch(`/leave/requests/${encodeURIComponent(id)}/${seg}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ not_deducted_days: 0 }),
+  });
+  return { ok: true };
 }
 
 export async function restoreLastLeave(): Promise<boolean> {

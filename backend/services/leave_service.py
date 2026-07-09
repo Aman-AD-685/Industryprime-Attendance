@@ -136,6 +136,65 @@ def _resolve_valid_tenant_id(supabase: SupabaseRest, tenant_id: Optional[str]) -
         return tenant_id
 
 
+def normalize_leave_status(status: Any) -> str:
+    return str(status or "pending").strip().lower()
+
+
+def is_pending_leave_request(row: Dict[str, Any]) -> bool:
+    """True only when leave is still waiting for a decision (email or dashboard)."""
+    st = normalize_leave_status(row.get("status"))
+    if st in {
+        "approved",
+        "rejected",
+        "unapproved",
+        "denied",
+        "cancelled",
+        "canceled",
+    }:
+        return False
+    if row.get("approved_at") or str(row.get("approved_by") or "").strip():
+        return False
+    if row.get("rejected_at") or str(row.get("rejected_by") or "").strip():
+        return False
+    if row.get("decision_token_used") is True:
+        return False
+    return st in {"", "pending"}
+
+
+def build_leave_decision_payload(
+    *,
+    decision: str,
+    decided_by_email: Optional[str] = None,
+    remarks: Optional[str] = None,
+    rejection_remarks: Optional[str] = None,
+    not_deducted_days: float = 0,
+) -> Dict[str, Any]:
+    from datetime import datetime, timezone
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload: Dict[str, Any] = {"status": decision}
+    email = str(decided_by_email or "").strip()
+    if email:
+        payload["decided_by_email"] = email
+    general = str(remarks or "").strip()
+    if general:
+        payload["remarks"] = general
+    if decision == "approved":
+        if email:
+            payload["approved_by"] = email
+            payload["approved_at"] = now_iso
+    elif decision == "rejected":
+        rej = str(rejection_remarks or remarks or "").strip()
+        if email:
+            payload["rejected_by"] = email
+            payload["rejected_at"] = now_iso
+        if rej:
+            payload["rejection_remarks"] = rej
+    elif decision == "unapproved":
+        payload["not_deducted_days"] = max(0, float(not_deducted_days or 0))
+    return payload
+
+
 def list_leave_requests(status: Optional[str] = None) -> List[Dict[str, Any]]:
     return list_leave_requests_for_tenant(status=status, tenant_id=None, supabase=None)
 
@@ -198,24 +257,21 @@ def list_leave_requests_for_tenant(
 
     out = rows or []
     if st == "rejected":
-        out = [r for r in out if str(r.get("status") or "").strip().lower() in {"rejected", "unapproved"}]
+        out = [r for r in out if normalize_leave_status(r.get("status")) in {"rejected", "unapproved"}]
+    elif st == "pending":
+        out = [r for r in out if is_pending_leave_request(r)]
     elif st not in {"", "all"}:
-        out = [
-            r
-            for r in out
-            if str(r.get("status") or ("pending" if st == "pending" else "")).strip().lower() == st
-        ]
+        out = [r for r in out if normalize_leave_status(r.get("status")) == st]
         if not out and row_limit is not None:
             # Status casing in DB may not match `eq.pending` — bounded rescan.
             broad_where: Optional[Dict[str, Any]] = {"tenant_id": tenant_id} if tenant_id else None
             broad = _fetch(broad_where)
             if not broad and tenant_id:
                 broad = _fetch(None)
-            out = [
-                r
-                for r in broad
-                if str(r.get("status") or ("pending" if st == "pending" else "")).strip().lower() == st
-            ]
+            if st == "pending":
+                out = [r for r in broad if is_pending_leave_request(r)]
+            else:
+                out = [r for r in broad if normalize_leave_status(r.get("status")) == st]
     eid = str(employee_id or "").strip()
     if eid:
         out = [r for r in out if str(r.get("employee_id") or "") == eid]
@@ -234,23 +290,57 @@ def decide_leave_request_for_tenant(
     tenant_id: Optional[str] = None,
     supabase: Optional[SupabaseRest] = None,
     not_deducted_days: float = 0,
+    decided_by_email: Optional[str] = None,
 ) -> Dict[str, Any]:
     if supabase is None:
         supabase = get_supabase()
     if decision not in ("approved", "rejected", "unapproved"):
         raise ValueError("decision must be 'approved', 'rejected', or 'unapproved'")
 
-    payload = {"status": decision}
-    if decision == "unapproved":
-        payload["not_deducted_days"] = max(0, float(not_deducted_days or 0))
-    updated = supabase.update_single(
+    rows = supabase.select(
         table="leave_requests",
-        payload=payload,
-        where_eq={k: v for k, v in {"id": request_id, "tenant_id": tenant_id}.items() if v is not None},
+        select="id,status,tenant_id,approved_at,approved_by,rejected_at,rejected_by,decision_token_used",
+        where_eq={"id": request_id},
+        limit=1,
     )
-    if not updated:
+    if not rows:
         raise ValueError("Leave request not found")
-    return updated
+    current = rows[0]
+    if not is_pending_leave_request(current):
+        raise ValueError("Leave request already decided")
+
+    payload = build_leave_decision_payload(
+        decision=decision,
+        decided_by_email=decided_by_email,
+        not_deducted_days=not_deducted_days,
+    )
+
+    where_attempts: List[Dict[str, Any]] = []
+    if tenant_id:
+        where_attempts.append({"id": request_id, "tenant_id": tenant_id})
+    where_attempts.append({"id": request_id})
+
+    slim_payload = {"status": decision}
+    payload_attempts = [payload, slim_payload]
+
+    last_err: Optional[Exception] = None
+    for where_eq in where_attempts:
+        for attempt_payload in payload_attempts:
+            try:
+                updated = supabase.update_single(
+                    table="leave_requests",
+                    payload=attempt_payload,
+                    where_eq=where_eq,
+                )
+                if updated:
+                    return updated
+            except Exception as exc:
+                last_err = exc
+                continue
+
+    if last_err:
+        raise ValueError(f"Could not update leave request: {last_err}")
+    raise ValueError("Leave request not found")
 
 
 def _is_admin(role: str) -> bool:

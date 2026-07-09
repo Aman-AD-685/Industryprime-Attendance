@@ -6,21 +6,27 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchMeProfile } from "@/lib/api/me";
 import { getStoredUser, type AuthUser } from "@/lib/auth";
 
-export type SessionUser = Pick<AuthUser, "id" | "name" | "email" | "role"> & {
+export type SessionUser = Pick<AuthUser, "id" | "name" | "email" | "role" | "can_approve_leave"> & {
   shift?: string | null;
   location?: string | null;
   joinedAt?: string | null;
 };
 
-function readSessionUser(): Pick<AuthUser, "id" | "name" | "email" | "role"> | null {
+function readSessionUser(): Pick<AuthUser, "id" | "name" | "email" | "role" | "can_approve_leave"> | null {
   const u = getStoredUser();
   if (!u) return null;
-  return { id: u.id, name: u.name, email: u.email, role: u.role };
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    can_approve_leave: u.can_approve_leave,
+  };
 }
 
 export function useSession(): { user: SessionUser | null } {
-  const [user, setUser] = useState<Pick<AuthUser, "id" | "name" | "email" | "role"> | null>(() =>
-    typeof window === "undefined" ? null : readSessionUser(),
+  const [user, setUser] = useState<Pick<AuthUser, "id" | "name" | "email" | "role" | "can_approve_leave"> | null>(
+    () => (typeof window === "undefined" ? null : readSessionUser()),
   );
 
   const sync = useCallback(() => {

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, LEAVE_API_TIMEOUT_MS } from "@/lib/api";

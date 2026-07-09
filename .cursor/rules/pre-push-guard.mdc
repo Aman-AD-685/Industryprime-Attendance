@@ -12,11 +12,12 @@ When the user asks to **commit**, **push**, **git push**, **deploy**, **go live*
 3. Run from repo root:
    - `powershell -NoProfile -File .cursor/skills/pre-push-guard/scripts/collect-push-scope.ps1`
    - `powershell -NoProfile -File .cursor/skills/pre-push-guard/scripts/run-production-audit.ps1`
-4. Read **`.cursor/local/pre-push-guard/last-run-report.md`** — must show **`VERDICT: SAFE`** before push.
-5. Run **ce-code-review** (report-only) when `ce-status.ps1` prints `CE_STATUS=enabled`.
-6. Print Pre-Push Report; **do not `git push`** if VERDICT is BLOCKED or any **P0** security issue.
-7. Update **`memory.md`** with new lessons; append **daily-journal** via `append-daily-log.ps1`.
-8. Never commit `.cursor/local/` (gitignored).
+4. **Step 2b (Ponytail):** ponytail-review on push diff — advisory P2/P3 only; see `.cursor/skills/pre-push-compound-review/PONYTAIL.md`. Does **not** block push.
+5. Read **`.cursor/local/pre-push-guard/last-run-report.md`** — must show **`VERDICT: SAFE`** before push.
+6. Run **ce-code-review** (report-only) when `ce-status.ps1` prints `CE_STATUS=enabled`.
+7. Print Pre-Push Report; **do not `git push`** if VERDICT is BLOCKED or any **P0** security issue.
+8. Update **`memory.md`** with new lessons; append **daily-journal** via `append-daily-log.ps1`.
+9. Never commit `.cursor/local/` (gitignored).
 
 Override only if user writes: `push despite critical: <reason>`.
 
