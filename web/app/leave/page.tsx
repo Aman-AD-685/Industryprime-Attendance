@@ -235,8 +235,12 @@ export default function LeavePage() {
             loaded_lists?: boolean;
             approval_list_count?: number;
             notification_list_count?: number;
+            applicant_list_count?: number;
+            applicant_notify_email?: string | null;
+            planned_recipient_count?: number;
             emails_sent_approval?: number;
             emails_sent_notification?: number;
+            emails_sent_applicant?: number;
             error?: string | null;
             delivery_mode?: string;
             delivery_note?: string | null;
@@ -246,6 +250,9 @@ export default function LeavePage() {
       if (n && typeof n === "object") {
         const appr = Number(n.emails_sent_approval) || 0;
         const fy = Number(n.emails_sent_notification) || 0;
+        const idMail = Number(n.emails_sent_applicant) || 0;
+        const sentTotal = appr + fy + idMail;
+        const planned = Number(n.planned_recipient_count) || 0;
         const err = n.error ? String(n.error) : "";
         const note = n.delivery_note ? String(n.delivery_note) : "";
         const logMode = String(n.delivery_mode || "").toLowerCase() === "log";
@@ -253,13 +260,23 @@ export default function LeavePage() {
           msg = `Leave saved. Email step: ${err.slice(0, 280)}${err.length > 280 ? "…" : ""}`;
         } else if (note) {
           msg = `Leave saved. ${note.slice(0, 420)}${note.length > 420 ? "…" : ""}`;
-        } else if (logMode && appr + fy > 0) {
-          msg = `Leave saved. EMAIL_MODE=log on the server: ${appr} approval + ${fy} FYI would have been sent (see API host logs); not delivered. Set Postmark on the API host or keep log mode for staging.`;
-        } else if (appr + fy === 0) {
+        } else if (logMode && sentTotal > 0) {
+          msg = `Leave saved. EMAIL_MODE=log on the server: ${appr} approval + ${fy} FYI + ${idMail} ID mail would have been sent (see API logs); not delivered in inbox.`;
+        } else if (sentTotal === 0 && planned > 0) {
           msg =
-            "Leave saved. No emails were sent (no rows in Email lists, or Postmark/API misconfigured on the server). Check Settings → Email lists and Postmark Activity.";
+            "Leave saved. Recipients are configured but no email was delivered — check Postmark/SMTP on the API server (Settings → Send Test Email).";
+        } else if (sentTotal === 0 && (Number(n.applicant_list_count) || 0) > 0 && !n.applicant_notify_email) {
+          msg =
+            "Leave saved. No ID mail matched this employee — add their email under Settings → Email lists → Leave apply from (name must match employee).";
+        } else if (sentTotal === 0) {
+          msg =
+            "Leave saved. No recipients configured — add Approval, Notification, or Leave apply from under Settings → Email lists.";
         } else {
-          msg = `Leave saved. Emails sent: ${appr} approval link(s), ${fy} FYI notification(s).`;
+          const parts: string[] = [];
+          if (appr) parts.push(`${appr} approval`);
+          if (fy) parts.push(`${fy} FYI`);
+          if (idMail) parts.push(`${idMail} ID mail`);
+          msg = `Leave saved. Email sent: ${parts.join(", ")}.`;
         }
       }
       setInfo(msg);

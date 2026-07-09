@@ -16,3 +16,5 @@ services:
         sync: false
       - key: FRONTEND_URL
         value: https://industryprime-attendance.vercel.app
+      - key: EMAIL_FRONTEND_URL
+        value: https://industryprime-attendance.vercel.app

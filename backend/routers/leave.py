@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
 
 from fastapi import APIRouter, Body, HTTPException, Header, Path, Query
 from pydantic import BaseModel, Field
@@ -11,21 +10,15 @@ from pydantic import BaseModel, Field
 from database.supabase_client import get_supabase_service, get_supabase_user
 from dependencies.auth_dependency import get_auth_context
 from services.auth_service import require_role
-from services.decision_token_service import make_decision_token, verify_decision_token
-from services.leave_applicant_display import (
-    applicant_id_mail_for_notify,
-    resolve_leave_applicant_display,
-    send_leave_applicant_id_notification,
-)
+from services.decision_token_service import verify_decision_token
+from services.leave_apply_email_notify import notify_leave_apply_recipients
 from services.leave_approver_service import can_approve_leave
 from services.leave_service import is_pending_leave_request
 from services.email_service import (
     email_delivery_mode,
-    postmark_token_configured,
     render_email_template,
     send_email,
 )
-from services.public_frontend_url import public_base_url_for_email
 from services.leave_balance_attendance_service import calculate_user_leave_balance
 from services.leave_service import (
     create_leave_request,
@@ -261,176 +254,36 @@ def _notify_leave_recipients(
     employee: Dict[str, Any],
     leave_row: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    Send leave request emails from legacy `/leave/requests` flow.
-    Uses the service-role Supabase client for `email_lists` so RLS on that table
-    does not hide recipients when the caller is a normal user JWT.
-    Does not fail the request if email list table is missing/unmigrated or if SMTP fails.
-    Returns a small summary for the API response (check `email_notify` in production).
-    """
-    summary: Dict[str, Any] = {
-        "loaded_lists": False,
-        "approval_list_count": 0,
-        "notification_list_count": 0,
-        "emails_sent_approval": 0,
-        "emails_sent_notification": 0,
-        "emails_sent_applicant": 0,
-        "error": None,
-        "delivery_mode": email_delivery_mode(),
-        "delivery_note": None,
-    }
-    db_lists = get_supabase_service()
-    try:
-        approvals = db_lists.select(
-            table="email_lists",
-            select="email,name",
-            where_eq={"kind": "approval"},
-            order="created_at.desc",
-            limit=200,
-        )
-        notifications = db_lists.select(
-            table="email_lists",
-            select="email,name",
-            where_eq={"kind": "notification"},
-            order="created_at.desc",
-            limit=200,
-        )
-        summary["loaded_lists"] = True
-        summary["approval_list_count"] = len(approvals or [])
-        summary["notification_list_count"] = len(notifications or [])
-    except Exception as exc:
-        summary["error"] = f"email_lists_query_failed: {exc}"
-        logger.error(
-            "Leave notify: could not read public.email_lists with service role "
-            "(check SUPABASE_SERVICE_ROLE_KEY on the API host and table exists): %s",
-            exc,
-            exc_info=True,
-        )
-        return summary
-
-    applicant_email, applicant_name = resolve_leave_applicant_display(employee, supabase=db_lists)
-    from_date = str(leave_row.get("leave_date_start") or "")
-    to_date = str(leave_row.get("leave_date_end") or "")
-    reason = str(leave_row.get("reason") or "")
+    """Send leave apply emails; each address gets at most one mail across all lists."""
     leave_id = str(leave_row.get("id") or "").strip()
     if not leave_id:
-        summary["error"] = "leave_row_missing_id_cannot_build_approval_links"
         logger.error(
             "Leave notify skipped: inserted leave row has no id (cannot send approval links). row_keys=%s",
             list(leave_row.keys()) if isinstance(leave_row, dict) else type(leave_row),
         )
-        return summary
+        return {
+            "loaded_lists": False,
+            "approval_list_count": 0,
+            "notification_list_count": 0,
+            "emails_sent_approval": 0,
+            "emails_sent_notification": 0,
+            "emails_sent_applicant": 0,
+            "applicant_list_count": 0,
+            "applicant_notify_email": None,
+            "planned_recipient_count": 0,
+            "error": "leave_row_missing_id_cannot_build_approval_links",
+            "delivery_mode": email_delivery_mode(),
+            "delivery_note": None,
+        }
 
-    if summary["approval_list_count"] == 0 and summary["notification_list_count"] == 0:
-        logger.warning(
-            "Leave notify: email_lists has no approval or notification rows; "
-            "will still notify Leave apply from ID mail when configured."
-        )
-
-    already_notified: set[str] = set()
-    planned_sends = 0
-    for row in approvals or []:
-        if str(row.get("email") or "").strip():
-            planned_sends += 1
-    for row in notifications or []:
-        if str(row.get("email") or "").strip():
-            planned_sends += 1
-    id_mail = applicant_id_mail_for_notify(employee, supabase=db_lists)
-    if id_mail:
-        planned_sends += 1
-
-    base = public_base_url_for_email(log_context="leave_approval_email")
-    try:
-        for row in approvals or []:
-            to_email = str(row.get("email") or "").strip().lower()
-            if not to_email:
-                continue
-            approve_token = make_decision_token(leave_id=leave_id, email=to_email, action="approve")
-            reject_token = make_decision_token(leave_id=leave_id, email=to_email, action="reject")
-            approve_url = f"{base}/leave/decision?leave_id={quote(leave_id, safe='')}&token={quote(approve_token, safe='')}&action=approve"
-            reject_url = f"{base}/leave/reject?leave_id={quote(leave_id, safe='')}&token={quote(reject_token, safe='')}"
-            html = render_email_template(
-                "leave_approval_request.html",
-                {
-                    "applicant_name": applicant_name,
-                    "applicant_email": applicant_email,
-                    "from_date": from_date,
-                    "to_date": to_date,
-                    "reason": reason,
-                    "approve_url": approve_url,
-                    "reject_url": reject_url,
-                    "leave_id": leave_id,
-                },
-            )
-            if send_email(
-                to_email,
-                subject=f"Leave Approval Request — {applicant_name} ({from_date} -> {to_date})",
-                html=html,
-                text=f"Leave request for {applicant_name}: {from_date} -> {to_date}. Approve: {approve_url} Reject: {reject_url}",
-            ):
-                summary["emails_sent_approval"] += 1
-                already_notified.add(to_email)
-
-        for row in notifications or []:
-            to_email = str(row.get("email") or "").strip().lower()
-            if not to_email:
-                continue
-            html = render_email_template(
-                "leave_notification.html",
-                {
-                    "applicant_name": applicant_name,
-                    "applicant_email": applicant_email,
-                    "from_date": from_date,
-                    "to_date": to_date,
-                    "reason": reason,
-                },
-            )
-            if send_email(
-                to_email,
-                subject=f"Leave Applied — {applicant_name} ({from_date} -> {to_date})",
-                html=html,
-                text=f"FYI: {applicant_name} applied leave for {from_date} -> {to_date}.",
-            ):
-                summary["emails_sent_notification"] += 1
-                already_notified.add(to_email)
-
-        if send_leave_applicant_id_notification(
-            employee=employee,
-            applicant_name=applicant_name,
-            applicant_email=applicant_email,
-            from_date=from_date,
-            to_date=to_date,
-            reason=reason,
-            already_notified=already_notified,
-            supabase=db_lists,
-        ):
-            summary["emails_sent_applicant"] += 1
-
-        sent_total = (
-            summary["emails_sent_approval"]
-            + summary["emails_sent_notification"]
-            + summary["emails_sent_applicant"]
-        )
-        if (
-            planned_sends > 0
-            and sent_total == 0
-            and email_delivery_mode() == "postmark"
-            and not postmark_token_configured()
-        ):
-            summary["delivery_note"] = (
-                "No emails were delivered: Postmark SMTP credentials missing on the API server. "
-                "Set POSTMARK_SMTP_USERNAME, POSTMARK_SMTP_TOKEN, POSTMARK_SMTP_HOST, POSTMARK_SMTP_PORT, "
-                "and SMTP_FROM_EMAIL where FastAPI runs (e.g. Render), redeploy, or set EMAIL_MODE=log."
-            )
-    except Exception as exc:
-        summary["error"] = f"send_failed: {exc}"
-        logger.error(
-            "Leave saved but notification email failed — check POSTMARK_SMTP_* and SMTP_FROM_EMAIL on the API host: %s",
-            exc,
-            exc_info=True,
-        )
-
-    return summary
+    return notify_leave_apply_recipients(
+        employee=employee,
+        leave_id=leave_id,
+        from_date=str(leave_row.get("leave_date_start") or ""),
+        to_date=str(leave_row.get("leave_date_end") or ""),
+        reason=str(leave_row.get("reason") or ""),
+        log_context="leave_approval_email",
+    )
 
 
 def _enrich_leave_requests_with_employee(supabase, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

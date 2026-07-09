@@ -5,6 +5,7 @@ create table if not exists public.email_lists (
   kind text not null check (kind in ('approval','notification','applicant')),
   email text not null,
   name text,
+  approver_email text,
   created_by uuid references public.users(id),
   created_at timestamptz not null default now(),
   unique (kind, email)

@@ -32,4 +32,14 @@ def test_localhost_when_not_managed_and_no_env(monkeypatch):
     monkeypatch.delenv("FRONTEND_URL", raising=False)
     monkeypatch.delenv("EMAIL_FRONTEND_URL", raising=False)
     monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    monkeypatch.setenv("EMAIL_MODE", "log")
     assert pfu.public_base_url_for_email() == "http://localhost:3000"
+
+
+def test_postmark_mode_never_returns_localhost(monkeypatch):
+    monkeypatch.delenv("RENDER", raising=False)
+    monkeypatch.delenv("FRONTEND_URL", raising=False)
+    monkeypatch.delenv("EMAIL_FRONTEND_URL", raising=False)
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    monkeypatch.setenv("EMAIL_MODE", "postmark")
+    assert pfu.public_base_url_for_email() == "https://industryprime-attendance.vercel.app"

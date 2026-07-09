@@ -25,7 +25,7 @@ def _is_missing_email_lists_table(exc: Exception) -> bool:
 def _migration_hint() -> str:
     return (
         "Email lists table is not migrated yet. Run backend/database/email_lists_schema.sql "
-        "and backend/database/email_lists_applicant_kind.sql in Supabase SQL Editor."
+        "and backend/database/email_lists_applicant_kind.sql and email_lists_approver_email.sql in Supabase SQL Editor."
     )
 
 
@@ -49,10 +49,12 @@ class EmailListCreateIn(BaseModel):
     kind: str = Field(..., pattern=_KIND_PATTERN)
     email: str = Field(..., min_length=5, max_length=255)
     name: Optional[str] = Field(default=None, max_length=120)
+    approver_email: Optional[str] = Field(default=None, max_length=255)
 
 
 class EmailListPatchIn(BaseModel):
     name: Optional[str] = Field(default=None, max_length=120)
+    approver_email: Optional[str] = Field(default=None, max_length=255)
 
 
 class EmailTestIn(BaseModel):
@@ -68,7 +70,7 @@ def list_email_lists(
     try:
         return get_supabase_service().select(
             table="email_lists",
-            select="id,kind,email,name,created_by,created_at",
+            select="id,kind,email,name,approver_email,created_by,created_at",
             where_eq={"kind": kind},
             order="created_at.desc",
         )
@@ -90,10 +92,16 @@ def create_email_list(
             status_code=400,
             detail="Display name is required for leave apply mappings (e.g. Souvik Das).",
         )
+    if payload.kind == "applicant" and not str(payload.approver_email or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Approver email is required (who receives Approve/Reject for this ID mail).",
+        )
     row = {
         "kind": payload.kind,
         "email": _clean_email(payload.email),
         "name": payload.name.strip() if payload.name else None,
+        "approver_email": _clean_email(payload.approver_email) if payload.kind == "applicant" else None,
         "created_by": user_id,
     }
     try:
@@ -116,10 +124,15 @@ def patch_email_list(
     authorization: Optional[str] = Header(default=None),
 ):
     _require_master_admin(authorization)
+    payload_data: Dict[str, Any] = {}
+    if payload.name is not None:
+        payload_data["name"] = payload.name.strip() if payload.name else None
+    if payload.approver_email is not None:
+        payload_data["approver_email"] = _clean_email(payload.approver_email) if payload.approver_email else None
     try:
         updated = get_supabase_service().update_single(
             table="email_lists",
-            payload={"name": payload.name.strip() if payload.name else None},
+            payload=payload_data,
             where_eq={"id": list_id},
         )
     except RuntimeError as exc:

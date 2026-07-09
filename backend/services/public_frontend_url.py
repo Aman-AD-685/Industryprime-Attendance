@@ -75,7 +75,7 @@ def _first_from_cors_origins() -> Optional[str]:
 def public_base_url_for_email(*, log_context: str = "email") -> str:
     """
     Return https origin for links in outbound email. Never returns localhost on managed hosts
-    when any fallback is configured (env or default constant).
+    when any fallback is configured (env or default constant). Postmark mode never uses localhost.
     """
     for candidate in _first_non_loopback_from_env_list():
         return candidate
@@ -95,4 +95,19 @@ def public_base_url_for_email(*, log_context: str = "email") -> str:
             )
             return fallback
 
-    return "http://localhost:3000"
+    url = "http://localhost:3000"
+    try:
+        from services.email_service import email_delivery_mode
+
+        if email_delivery_mode() == "postmark" and _is_loopback_origin(url):
+            fallback = os.getenv("FALLBACK_EMAIL_FRONTEND_URL", _DEFAULT_MANAGED_FALLBACK).strip().rstrip("/")
+            if fallback and not _is_loopback_origin(fallback):
+                logger.warning(
+                    "%s: Postmark mode — email links use %s (not localhost). Set FRONTEND_URL on API host.",
+                    log_context,
+                    fallback,
+                )
+                return fallback
+    except Exception:
+        pass
+    return url

@@ -11,13 +11,8 @@ from database.supabase_client import get_supabase_service
 from dependencies.auth_dependency import get_auth_context
 from services.audit_service import record_audit_event
 from services.decision_token_service import make_decision_token, verify_decision_token
-from services.leave_applicant_display import (
-    applicant_id_mail_for_notify,
-    resolve_leave_applicant_display,
-    send_leave_applicant_id_notification,
-)
+from services.leave_apply_email_notify import notify_leave_apply_recipients
 from services.email_service import render_email_template, send_email
-from services.public_frontend_url import public_base_url_for_email
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -36,16 +31,6 @@ class LeaveCreateIn(BaseModel):
 class LeaveDecisionIn(BaseModel):
     token: str = Field(..., min_length=20)
     remarks: str = Field(..., min_length=1, max_length=2000)
-
-
-def _list_recipients(kind: str) -> List[Dict[str, Any]]:
-    return get_supabase_service().select(
-        table="email_lists",
-        select="id,email,name",
-        where_eq={"kind": kind},
-        order="created_at.desc",
-        limit=500,
-    )
 
 
 @router.post("", response_model=Dict[str, Any])
@@ -81,124 +66,40 @@ def apply_leave(
         limit=1,
     )
     applicant = applicants[0] if applicants else {"name": auth.name, "email": auth.email}
-    applicant_email, applicant_name = resolve_leave_applicant_display(applicant, supabase=db)
+    applicant = {**applicant, "email": auth.email or applicant.get("email")}
 
-    approval_rows = _list_recipients("approval")
-    notification_rows = _list_recipients("notification")
-
-    frontend_base = public_base_url_for_email(log_context="leaves_approval_email")
-
-    already_notified: set[str] = set()
-    try:
-        for r in approval_rows:
-            to_email = str(r.get("email") or "").strip().lower()
-            if not to_email:
-                continue
-            approve_token = make_decision_token(leave_id=leave_id, email=to_email, action="approve")
-            reject_token = make_decision_token(leave_id=leave_id, email=to_email, action="reject")
-            db.insert_many(
-                table="leave_decision_tokens",
-                rows=[
-                    {
-                        "token": approve_token,
-                        "leave_id": leave_id,
-                        "recipient_email": to_email,
-                        "action": "approve",
-                        "expires_at": expiry.isoformat(),
-                    },
-                    {
-                        "token": reject_token,
-                        "leave_id": leave_id,
-                        "recipient_email": to_email,
-                        "action": "reject",
-                        "expires_at": expiry.isoformat(),
-                    },
-                ],
-                return_representation=False,
-            )
-            from urllib.parse import quote
-
-            approve_url = (
-                f"{frontend_base}/leave/decision?leave_id={quote(leave_id, safe='')}"
-                f"&token={quote(approve_token, safe='')}&action=approve"
-            )
-            reject_url = (
-                f"{frontend_base}/leave/reject?leave_id={quote(leave_id, safe='')}"
-                f"&token={quote(reject_token, safe='')}"
-            )
-            html = render_email_template(
-                "leave_approval_request.html",
+    def _store_approval_tokens(to_email: str, approve_token: str, reject_token: str) -> None:
+        db.insert_many(
+            table="leave_decision_tokens",
+            rows=[
                 {
-                    "applicant_name": applicant_name,
-                    "applicant_email": applicant_email,
-                    "from_date": fd.isoformat(),
-                    "to_date": td.isoformat(),
-                    "reason": payload.reason.strip(),
-                    "approve_url": approve_url,
-                    "reject_url": reject_url,
+                    "token": approve_token,
                     "leave_id": leave_id,
+                    "recipient_email": to_email,
+                    "action": "approve",
+                    "expires_at": expiry.isoformat(),
                 },
-            )
-            if not send_email(
-                to_email,
-                subject=f"Leave Approval Request — {applicant_name} ({fd.isoformat()} -> {td.isoformat()})",
-                html=html,
-                text=f"Leave request from {applicant_name}. Approve: {approve_url} Reject: {reject_url}",
-            ):
-                logger.warning(
-                    "Leave apply: approval email not sent (Postmark not configured on API host or EMAIL_MODE=log only)."
-                )
-            else:
-                already_notified.add(to_email)
-
-        for r in notification_rows:
-            to_email = str(r.get("email") or "").strip().lower()
-            if not to_email:
-                continue
-            html = render_email_template(
-                "leave_notification.html",
                 {
-                    "applicant_name": applicant_name,
-                    "applicant_email": applicant_email,
-                    "from_date": fd.isoformat(),
-                    "to_date": td.isoformat(),
-                    "reason": payload.reason.strip(),
+                    "token": reject_token,
+                    "leave_id": leave_id,
+                    "recipient_email": to_email,
+                    "action": "reject",
+                    "expires_at": expiry.isoformat(),
                 },
-            )
-            if not send_email(
-                to_email,
-                subject=f"Leave Applied — {applicant_name} ({fd.isoformat()} -> {td.isoformat()})",
-                html=html,
-                text=f"FYI: Leave applied by {applicant_name} for {fd.isoformat()} to {td.isoformat()}",
-            ):
-                logger.warning(
-                    "Leave apply: notification email not sent (Postmark not configured on API host or send skipped)."
-                )
-            else:
-                already_notified.add(to_email)
-
-        if not send_leave_applicant_id_notification(
-            employee=applicant,
-            applicant_name=applicant_name,
-            applicant_email=applicant_email,
-            from_date=fd.isoformat(),
-            to_date=td.isoformat(),
-            reason=payload.reason.strip(),
-            already_notified=already_notified,
-            supabase=db,
-        ):
-            id_mail = applicant_id_mail_for_notify(applicant, supabase=db)
-            if id_mail and id_mail not in already_notified:
-                logger.warning(
-                    "Leave apply: Leave apply from ID mail not sent to %s (Postmark not configured or send skipped).",
-                    id_mail,
-                )
-    except Exception as exc:
-        logger.error(
-            "Leave saved but email/token notify failed — check POSTMARK_SMTP_* and SMTP_FROM_EMAIL on API host: %s",
-            exc,
-            exc_info=True,
+            ],
+            return_representation=False,
         )
+
+    notify_leave_apply_recipients(
+        employee=applicant,
+        leave_id=leave_id,
+        from_date=fd.isoformat(),
+        to_date=td.isoformat(),
+        reason=payload.reason.strip(),
+        supabase=db,
+        log_context="leaves_approval_email",
+        on_approval_tokens=_store_approval_tokens,
+    )
 
     record_audit_event(
         db,
