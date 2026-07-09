@@ -167,7 +167,7 @@ export default function EmailListsPage() {
         />
         <Card
           title="Leave apply from"
-          note="ID mail used when leave is applied. Add one row per email — approvers see: email → employee name."
+          note="ID mail used when leave is applied. That address is notified on apply; approvers see email → employee name."
           items={applicant}
           form={form.applicant}
           loading={loading}

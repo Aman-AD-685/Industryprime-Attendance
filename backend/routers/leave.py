@@ -12,7 +12,11 @@ from database.supabase_client import get_supabase_service, get_supabase_user
 from dependencies.auth_dependency import get_auth_context
 from services.auth_service import require_role
 from services.decision_token_service import make_decision_token, verify_decision_token
-from services.leave_applicant_display import resolve_leave_applicant_display
+from services.leave_applicant_display import (
+    applicant_id_mail_for_notify,
+    resolve_leave_applicant_display,
+    send_leave_applicant_id_notification,
+)
 from services.leave_approver_service import can_approve_leave
 from services.leave_service import is_pending_leave_request
 from services.email_service import (
@@ -270,6 +274,7 @@ def _notify_leave_recipients(
         "notification_list_count": 0,
         "emails_sent_approval": 0,
         "emails_sent_notification": 0,
+        "emails_sent_applicant": 0,
         "error": None,
         "delivery_mode": email_delivery_mode(),
         "delivery_note": None,
@@ -318,10 +323,11 @@ def _notify_leave_recipients(
 
     if summary["approval_list_count"] == 0 and summary["notification_list_count"] == 0:
         logger.warning(
-            "Leave notify: email_lists has no approval or notification rows; no emails sent. "
-            "Add rows in Settings → Email lists or run SQL against public.email_lists."
+            "Leave notify: email_lists has no approval or notification rows; "
+            "will still notify Leave apply from ID mail when configured."
         )
 
+    already_notified: set[str] = set()
     planned_sends = 0
     for row in approvals or []:
         if str(row.get("email") or "").strip():
@@ -329,6 +335,9 @@ def _notify_leave_recipients(
     for row in notifications or []:
         if str(row.get("email") or "").strip():
             planned_sends += 1
+    id_mail = applicant_id_mail_for_notify(employee, supabase=db_lists)
+    if id_mail:
+        planned_sends += 1
 
     base = public_base_url_for_email(log_context="leave_approval_email")
     try:
@@ -360,6 +369,7 @@ def _notify_leave_recipients(
                 text=f"Leave request for {applicant_name}: {from_date} -> {to_date}. Approve: {approve_url} Reject: {reject_url}",
             ):
                 summary["emails_sent_approval"] += 1
+                already_notified.add(to_email)
 
         for row in notifications or []:
             to_email = str(row.get("email") or "").strip().lower()
@@ -382,8 +392,25 @@ def _notify_leave_recipients(
                 text=f"FYI: {applicant_name} applied leave for {from_date} -> {to_date}.",
             ):
                 summary["emails_sent_notification"] += 1
+                already_notified.add(to_email)
 
-        sent_total = summary["emails_sent_approval"] + summary["emails_sent_notification"]
+        if send_leave_applicant_id_notification(
+            employee=employee,
+            applicant_name=applicant_name,
+            applicant_email=applicant_email,
+            from_date=from_date,
+            to_date=to_date,
+            reason=reason,
+            already_notified=already_notified,
+            supabase=db_lists,
+        ):
+            summary["emails_sent_applicant"] += 1
+
+        sent_total = (
+            summary["emails_sent_approval"]
+            + summary["emails_sent_notification"]
+            + summary["emails_sent_applicant"]
+        )
         if (
             planned_sends > 0
             and sent_total == 0

@@ -11,7 +11,11 @@ from database.supabase_client import get_supabase_service
 from dependencies.auth_dependency import get_auth_context
 from services.audit_service import record_audit_event
 from services.decision_token_service import make_decision_token, verify_decision_token
-from services.leave_applicant_display import resolve_leave_applicant_display
+from services.leave_applicant_display import (
+    applicant_id_mail_for_notify,
+    resolve_leave_applicant_display,
+    send_leave_applicant_id_notification,
+)
 from services.email_service import render_email_template, send_email
 from services.public_frontend_url import public_base_url_for_email
 
@@ -84,6 +88,7 @@ def apply_leave(
 
     frontend_base = public_base_url_for_email(log_context="leaves_approval_email")
 
+    already_notified: set[str] = set()
     try:
         for r in approval_rows:
             to_email = str(r.get("email") or "").strip().lower()
@@ -143,6 +148,8 @@ def apply_leave(
                 logger.warning(
                     "Leave apply: approval email not sent (Postmark not configured on API host or EMAIL_MODE=log only)."
                 )
+            else:
+                already_notified.add(to_email)
 
         for r in notification_rows:
             to_email = str(r.get("email") or "").strip().lower()
@@ -166,6 +173,25 @@ def apply_leave(
             ):
                 logger.warning(
                     "Leave apply: notification email not sent (Postmark not configured on API host or send skipped)."
+                )
+            else:
+                already_notified.add(to_email)
+
+        if not send_leave_applicant_id_notification(
+            employee=applicant,
+            applicant_name=applicant_name,
+            applicant_email=applicant_email,
+            from_date=fd.isoformat(),
+            to_date=td.isoformat(),
+            reason=payload.reason.strip(),
+            already_notified=already_notified,
+            supabase=db,
+        ):
+            id_mail = applicant_id_mail_for_notify(applicant, supabase=db)
+            if id_mail and id_mail not in already_notified:
+                logger.warning(
+                    "Leave apply: Leave apply from ID mail not sent to %s (Postmark not configured or send skipped).",
+                    id_mail,
                 )
     except Exception as exc:
         logger.error(
