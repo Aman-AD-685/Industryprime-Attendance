@@ -17,8 +17,7 @@ def test_managed_host_fallback_when_unset(monkeypatch):
     monkeypatch.setenv("RENDER", "true")
     monkeypatch.delenv("FALLBACK_EMAIL_FRONTEND_URL", raising=False)
     url = pfu.public_base_url_for_email()
-    assert url.startswith("https://")
-    assert "localhost" not in url.lower()
+    assert url == "https://industryprime-attendance.vercel.app"
 
 
 def test_managed_host_respects_fallback_env(monkeypatch):

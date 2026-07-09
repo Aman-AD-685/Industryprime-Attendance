@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query
 from pydantic import BaseModel, Field
@@ -112,10 +111,16 @@ def apply_leave(
                 ],
                 return_representation=False,
             )
-            approve_q = urlencode({"action": "approve", "token": approve_token})
-            reject_q = urlencode({"action": "reject", "token": reject_token})
-            approve_url = f"{frontend_base}/leaves/{leave_id}/decide?{approve_q}"
-            reject_url = f"{frontend_base}/leaves/{leave_id}/decide?{reject_q}"
+            from urllib.parse import quote
+
+            approve_url = (
+                f"{frontend_base}/leave/decision?leave_id={quote(leave_id, safe='')}"
+                f"&token={quote(approve_token, safe='')}&action=approve"
+            )
+            reject_url = (
+                f"{frontend_base}/leave/reject?leave_id={quote(leave_id, safe='')}"
+                f"&token={quote(reject_token, safe='')}"
+            )
             html = render_email_template(
                 "leave_approval_request.html",
                 {
