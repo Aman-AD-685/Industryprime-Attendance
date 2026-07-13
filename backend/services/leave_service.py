@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 from database.supabase_client import SupabaseRest, get_supabase
+from services.employee_employment import filter_employees_for_month
 from services.hr_employees import (
     fetch_leave_balances_for_year,
     fetch_leave_requests_summary,
@@ -382,6 +383,7 @@ def list_leave_summary(
         fut_req = pool.submit(_requests)
         fut_bal = pool.submit(_balances)
         employees = fut_emp.result()
+        employees = filter_employees_for_month(employees, month, year)
         requests = fut_req.result()
         balances = fut_bal.result()
 

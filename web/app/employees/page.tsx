@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -24,6 +24,9 @@ type Employee = {
   hra_monthly?: number | null;
   conveyance_monthly?: number | null;
   special_allowance_monthly?: number | null;
+  employment_status?: "current" | "left" | null;
+  left_effective_month?: number | null;
+  left_effective_year?: number | null;
 };
 
 type EmployeeForm = {
@@ -182,6 +185,30 @@ export default function EmployeesPage() {
 
   const canManageEmployees = currentUser?.role === "master_admin" || currentUser?.role === "admin";
 
+  async function updateEmploymentStatus(row: Employee, employment_status: "current" | "left") {
+    if (!row.id || !canManageEmployees) return;
+    setSaving(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const updated = await apiFetch<Employee>(`/employees/${row.id}/employment-status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employment_status }),
+      });
+      setEmployees((rows) => rows.map((item) => (item.id === updated.id ? updated : item)));
+      setInfo(
+        employment_status === "left"
+          ? `${updated.name || updated.employee_code} marked Left — hidden from Attendance/Payroll from next month.`
+          : `${updated.name || updated.employee_code} marked Current Emp.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update status");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function loadEmployees() {
     setLoading(true);
     setError(null);
@@ -336,7 +363,7 @@ export default function EmployeesPage() {
       {loading ? <LoadingCard /> : (
         <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white/70 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/40">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40"><tr>{["Code", "AT-Div-Code", "Employee", "Email", "Department", "Monthly salary", "Old salary", "Effective from", "Actions"].map((title) => <th key={title} className="px-4 py-3 font-semibold text-zinc-700 dark:text-zinc-200">{title}</th>)}</tr></thead>
+            <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40"><tr>{["Code", "AT-Div-Code", "Employee", "Status", "Email", "Department", "Monthly salary", "Old salary", "Effective from", "Actions"].map((title) => <th key={title} className="px-4 py-3 font-semibold text-zinc-700 dark:text-zinc-200">{title}</th>)}</tr></thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {filtered.map((row) => {
                 const editing = editingId === row.id;
@@ -347,6 +374,32 @@ export default function EmployeesPage() {
                       <td className="px-4 py-3 align-top font-mono text-xs">{row.employee_code}</td>
                       <td className="px-4 py-3 align-top">{editing ? <input className={inputClass} value={editForm.at_div_code} onChange={(e) => setEditForm((state) => ({ ...state, at_div_code: e.target.value }))} /> : <span className="font-mono text-xs">{row.at_div_code || "-"}</span>}</td>
                       <td className="px-4 py-3 align-top">{editing ? <div className="space-y-2"><input className={inputClass} value={editForm.name} onChange={(e) => setEditForm((state) => ({ ...state, name: e.target.value }))} /><input className={inputClass} placeholder="Designation" value={editForm.designation} onChange={(e) => setEditForm((state) => ({ ...state, designation: e.target.value }))} /></div> : <div><div className="font-semibold text-zinc-900 dark:text-zinc-100">{row.name || "-"}</div><div className="text-xs text-zinc-500 dark:text-zinc-400">{row.designation || "-"}</div></div>}</td>
+                      <td className="px-4 py-3 align-top">
+                        {canManageEmployees ? (
+                          <select
+                            className={`rounded-xl border px-2 py-1.5 text-xs font-semibold outline-none focus:border-emerald-500/60 dark:bg-zinc-900 ${
+                              (row.employment_status || "current") === "left"
+                                ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+                                : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200"
+                            }`}
+                            value={row.employment_status || "current"}
+                            disabled={saving}
+                            onChange={(e) => void updateEmploymentStatus(row, e.target.value as "current" | "left")}
+                          >
+                            <option value="current">Current Emp</option>
+                            <option value="left">Left</option>
+                          </select>
+                        ) : (
+                          <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                            {(row.employment_status || "current") === "left" ? "Left" : "Current Emp"}
+                          </span>
+                        )}
+                        {(row.employment_status || "current") === "left" && row.left_effective_month && row.left_effective_year ? (
+                          <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                            From {monthYearLabel(row.left_effective_month, row.left_effective_year)}
+                          </div>
+                        ) : null}
+                      </td>
                       <td className="px-4 py-3 align-top">{editing ? <input className={inputClass} type="email" value={editForm.email} onChange={(e) => setEditForm((state) => ({ ...state, email: e.target.value }))} /> : row.email || "-"}</td>
                       <td className="px-4 py-3 align-top">{editing ? <input className={inputClass} value={editForm.department} onChange={(e) => setEditForm((state) => ({ ...state, department: e.target.value }))} /> : row.department || "-"}</td>
                       <td className="px-4 py-3 align-top">
@@ -369,7 +422,7 @@ export default function EmployeesPage() {
                     </tr>
                     {editing && canManageEmployees ? (
                       <tr className="bg-zinc-50/90 dark:bg-zinc-900/50">
-                        <td colSpan={9} className="px-4 py-4">
+                        <td colSpan={10} className="px-4 py-4">
                           {salaryChanged ? (
                             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
                               <div className="text-xs font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">Salary change — effective from</div>
@@ -409,7 +462,7 @@ export default function EmployeesPage() {
                   </Fragment>
                 );
               })}
-              {filtered.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-zinc-500 dark:text-zinc-400">No results</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-zinc-500 dark:text-zinc-400">No results</td></tr>}
             </tbody>
           </table>
         </div>

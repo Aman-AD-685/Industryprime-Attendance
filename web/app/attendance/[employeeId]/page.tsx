@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getStoredUser, type Role } from "@/lib/auth";
 
@@ -242,10 +242,13 @@ function calculateLocal(
 
 export default function AttendanceDetailPage() {
   const params = useParams<{ employeeId: string }>();
+  const searchParams = useSearchParams();
   const employeeId = params.employeeId;
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  const initialMonth = Number(searchParams.get("month")) || now.getMonth() + 1;
+  const initialYear = Number(searchParams.get("year")) || now.getFullYear();
+  const [month, setMonth] = useState(initialMonth);
+  const [year, setYear] = useState(initialYear);
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [role, setRole] = useState<Role | null>(null);
   const [employee, setEmployee] = useState<Employee | null>(null);

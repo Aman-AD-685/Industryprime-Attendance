@@ -80,5 +80,12 @@ class EmployeeOut(BaseModel):
     previous_salary_monthly: Optional[float] = None
     previous_salary_effective_until_month: Optional[int] = None
     previous_salary_effective_until_year: Optional[int] = None
+    employment_status: Optional[str] = "current"
+    left_effective_month: Optional[int] = None
+    left_effective_year: Optional[int] = None
 
     model_config = {"extra": "ignore"}
+
+
+class EmployeeEmploymentStatusUpdate(BaseModel):
+    employment_status: str = Field(..., pattern="^(current|left)$")

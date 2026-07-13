@@ -366,33 +366,51 @@ export default function LeavePage() {
 
         {showLeaveForm && (
           <form onSubmit={submitLeave} className="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Employee Name">
-                <input value={selected?.employee.name || selected?.employee.employee_code || ""} readOnly className="w-full cursor-not-allowed rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200" />
-              </Field>
-              <Field label="Leave Type*">
-                <select value={form.leave_type} onChange={(event) => setForm((state) => ({ ...state, leave_type: event.target.value }))} className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
+              <div className="min-w-0">
+                <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                  Employee Name
+                </label>
+                <input
+                  value={selected?.employee.name || selected?.employee.employee_code || ""}
+                  readOnly
+                  className="w-full cursor-not-allowed rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
+                />
+              </div>
+              <div className="min-w-0">
+                <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                  Leave Type*
+                </label>
+                <select
+                  value={form.leave_type}
+                  onChange={(event) => setForm((state) => ({ ...state, leave_type: event.target.value }))}
+                  className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-emerald-500/60 dark:border-zinc-800 dark:bg-zinc-950"
+                >
                   <option value="">Select leave type</option>
                   <option value="CL">CL</option>
                   <option value="SL">SL</option>
                   <option value="PL">PL</option>
                   <option value="Unpaid">Unpaid</option>
                 </select>
-              </Field>
-              <Field label="From*">
-                <input type="date" value={form.leave_date_start} onChange={(event) => setForm((state) => ({ ...state, leave_date_start: event.target.value }))} className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none dark:border-zinc-800 dark:bg-zinc-950" />
-              </Field>
-              <Field label="To*">
-                <input type="date" value={form.leave_date_end} onChange={(event) => setForm((state) => ({ ...state, leave_date_end: event.target.value }))} className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none dark:border-zinc-800 dark:bg-zinc-950" />
-              </Field>
-              <div className="md:col-span-2">
-                <Field label="Reason*">
-                  <textarea value={form.reason} onChange={(event) => setForm((state) => ({ ...state, reason: event.target.value }))} rows={3} className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none dark:border-zinc-800 dark:bg-zinc-950" />
-                </Field>
               </div>
+              <LeaveDateField
+                label="From*"
+                value={form.leave_date_start}
+                onChange={(iso) => setForm((state) => ({ ...state, leave_date_start: iso }))}
+              />
+              <LeaveDateField
+                label="To*"
+                value={form.leave_date_end}
+                onChange={(iso) => setForm((state) => ({ ...state, leave_date_end: iso }))}
+              />
             </div>
-            <div className="mt-4 flex justify-end">
-              <button type="submit" disabled={savingRequest || !selected} className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-60">
+            <div className="mt-3">
+              <Field label="Reason*">
+                <textarea value={form.reason} onChange={(event) => setForm((state) => ({ ...state, reason: event.target.value }))} rows={2} className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-sm outline-none dark:border-zinc-800 dark:bg-zinc-950" />
+              </Field>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button type="submit" disabled={savingRequest || !selected} className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-60">
                 {savingRequest ? "Submitting..." : "Submit Leave"}
               </button>
             </div>
@@ -512,6 +530,91 @@ export default function LeavePage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function daysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function parseIsoParts(value: string): { year: number; month: number; day: number } {
+  const now = new Date();
+  if (!value) return { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
+  const [y, m, d] = value.split("-").map(Number);
+  return {
+    year: y || now.getFullYear(),
+    month: m || now.getMonth() + 1,
+    day: d || 1,
+  };
+}
+
+function toIsoDate(year: number, month: number, day: number) {
+  const safeDay = Math.min(Math.max(1, day), daysInMonth(year, month));
+  return `${year}-${String(month).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+}
+
+function LeaveDateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (iso: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const parts = parseIsoParts(value);
+  const yearOptions = useMemo(() => {
+    const y = new Date().getFullYear();
+    return [y - 1, y, y + 1];
+  }, []);
+
+  function update(part: "year" | "month" | "day", raw: number) {
+    const next = { ...parts, [part]: raw };
+    onChange(toIsoDate(next.year, next.month, next.day));
+  }
+
+  const selectClass =
+    "w-full rounded-lg border border-zinc-200 bg-white px-1.5 py-1 text-xs outline-none focus:border-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-950";
+
+  return (
+    <div className="min-w-0">
+      <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        {label}
+      </label>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-left text-xs font-medium text-zinc-800 outline-none transition hover:border-emerald-400 focus:border-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+      >
+        {value ? formatDateText(value) : "Select date"}
+      </button>
+      {open ? (
+        <div className="mt-1 grid grid-cols-3 gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-1.5 dark:border-zinc-700 dark:bg-zinc-900/50">
+          <select className={selectClass} value={parts.month} onChange={(e) => update("month", Number(e.target.value))}>
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>
+                {new Date(2000, m - 1, 1).toLocaleString("en", { month: "short" })}
+              </option>
+            ))}
+          </select>
+          <select className={selectClass} value={parts.year} onChange={(e) => update("year", Number(e.target.value))}>
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+          <select className={selectClass} value={parts.day} onChange={(e) => update("day", Number(e.target.value))}>
+            {Array.from({ length: daysInMonth(parts.year, parts.month) }, (_, i) => i + 1).map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
     </div>
   );
 }

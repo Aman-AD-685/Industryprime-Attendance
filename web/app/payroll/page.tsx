@@ -20,6 +20,9 @@ type Employee = {
   hra_monthly?: number | null;
   conveyance_monthly?: number | null;
   special_allowance_monthly?: number | null;
+  employment_status?: "current" | "left" | null;
+  left_effective_month?: number | null;
+  left_effective_year?: number | null;
 };
 
 type PayslipEarnings = {
@@ -543,9 +546,20 @@ export default function PayrollPage() {
                     {item.employee.email || item.employee.employee_code}
                   </div>
                 </div>
-                <span className="rounded-full bg-white/80 px-2.5 py-1 text-xs font-semibold text-emerald-700 shadow-sm dark:bg-zinc-900 dark:text-emerald-300">
-                  {monthLabel(item.month, item.year)}
-                </span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className="rounded-full bg-white/80 px-2.5 py-1 text-xs font-semibold text-emerald-700 shadow-sm dark:bg-zinc-900 dark:text-emerald-300">
+                    {monthLabel(item.month, item.year)}
+                  </span>
+                  {(item.employee.employment_status || "current") === "left" ? (
+                    <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+                      Left
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200">
+                      Current Emp
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <Metric tint="present" label="Present" value={item.total_days_present} />

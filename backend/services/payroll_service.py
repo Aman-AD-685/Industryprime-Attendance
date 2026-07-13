@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Tuple
 
 from database.supabase_client import SupabaseRest, get_supabase
 from services.employee_salary_history_service import resolve_salaries_for_month
+from services.employee_employment import filter_employees_for_month
 from services.hr_employees import fetch_leave_balances_for_year, list_hr_employees
 from services.leave_balance_attendance_service import compute_leave_attendance_days_by_months
 from services.leave_service import (
@@ -80,6 +81,7 @@ def summarize_payroll(
         user_email=user_email,
         admin=_is_admin(role),
     )
+    employees = filter_employees_for_month(employees, month, year)
 
     employee_by_id = {str(row.get("id")): row for row in employees}
     emp_id_set = set(employee_by_id.keys())
@@ -196,6 +198,9 @@ def summarize_payroll(
                     "hra_monthly": employee.get("hra_monthly"),
                     "conveyance_monthly": employee.get("conveyance_monthly"),
                     "special_allowance_monthly": employee.get("special_allowance_monthly"),
+                    "employment_status": employee.get("employment_status") or "current",
+                    "left_effective_month": employee.get("left_effective_month"),
+                    "left_effective_year": employee.get("left_effective_year"),
                 },
                 "month": month,
                 "year": year,

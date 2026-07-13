@@ -10,9 +10,11 @@ from database.supabase_client import get_supabase_user
 from schemas.employees import (
     EmployeeAllowancesSelfUpdate,
     EmployeeCreate,
+    EmployeeEmploymentStatusUpdate,
     EmployeeOut,
     EmployeeUpdate,
 )
+from services.employee_employment import employment_status_patch_payload, filter_employees_for_month
 from services.employee_salary_history_service import (
     enrich_employees_with_salary_meta,
     record_initial_salary,
@@ -48,6 +50,8 @@ def _employee_out(supabase, row: dict) -> EmployeeOut:
 @router.get("", response_model=List[EmployeeOut])
 def get_employees(
     status: Optional[str] = Query(default="active"),
+    for_month: Optional[int] = Query(default=None, ge=1, le=12),
+    for_year: Optional[int] = Query(default=None, ge=2000, le=2100),
     authorization: Optional[str] = Header(default=None),
 ):
     if not authorization:
@@ -62,8 +66,35 @@ def get_employees(
     )
     if auth.role not in {"master_admin", "admin"}:
         rows = [row for row in rows if str(row.get("email") or "").strip().lower() == auth.email.strip().lower()]
+    if for_month is not None and for_year is not None:
+        rows = filter_employees_for_month(rows, for_month, for_year)
     enriched = enrich_employees_with_salary_meta(supabase, rows)
     return [EmployeeOut(**{**r, "id": str(r.get("id", ""))}) for r in enriched]
+
+
+@router.patch("/{employee_id}/employment-status", response_model=EmployeeOut)
+def patch_employee_employment_status(
+    employee_id: str,
+    body: EmployeeEmploymentStatusUpdate,
+    authorization: Optional[str] = Header(default=None),
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization bearer token")
+
+    auth = get_auth_context(authorization=authorization)
+    require_role({"role": auth.role}, "master_admin", "admin")
+    supabase = get_supabase_user(auth.access_token)
+    existing_rows = supabase.select(table="employees", select="id", where_eq={"id": employee_id}, limit=1)
+    if not existing_rows:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    try:
+        payload = employment_status_patch_payload(body.employment_status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    row = update_employee(employee_id, payload, supabase=supabase)
+    if not row.get("id"):
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return _employee_out(supabase, row)
 
 
 @router.post("", response_model=EmployeeOut)

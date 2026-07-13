@@ -9,7 +9,8 @@ from database.supabase_client import SupabaseRest
 EMPLOYEE_HR_SELECT = (
     "id,employee_code,at_div_code,name,email,department,designation,"
     "salary_monthly,professional_tax,pf_employee_monthly,income_tax_tds_monthly,"
-    "hra_monthly,conveyance_monthly,special_allowance_monthly"
+    "hra_monthly,conveyance_monthly,special_allowance_monthly,"
+    "employment_status,left_effective_month,left_effective_year"
 )
 
 # Use `*` because deployed schemas may differ slightly across environments
