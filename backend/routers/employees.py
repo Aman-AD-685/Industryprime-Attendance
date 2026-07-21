@@ -84,13 +84,7 @@ def patch_employee_employment_status(
     auth = get_auth_context(authorization=authorization)
     require_role({"role": auth.role}, "master_admin", "admin")
     supabase = get_supabase_user(auth.access_token)
-    existing_rows = supabase.select(table="employees", select="id", where_eq={"id": employee_id}, limit=1)
-    if not existing_rows:
-        raise HTTPException(status_code=404, detail="Employee not found")
-    try:
-        payload = employment_status_patch_payload(body.employment_status)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload = employment_status_patch_payload(body.employment_status)
     row = update_employee(employee_id, payload, supabase=supabase)
     if not row.get("id"):
         raise HTTPException(status_code=404, detail="Employee not found")

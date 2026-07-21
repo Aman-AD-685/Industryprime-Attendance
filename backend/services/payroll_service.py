@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
-from typing import Any, Dict, List, Optional, Set, Tuple, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from database.supabase_client import SupabaseRest, get_supabase
 from services.employee_salary_history_service import resolve_salaries_for_month

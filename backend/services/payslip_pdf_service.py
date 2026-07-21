@@ -2,11 +2,106 @@ from __future__ import annotations
 
 import calendar
 from datetime import date
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fpdf import FPDF
 
 from services.payslip_service import compute_payslip
+
+_LETTERHEAD_DIR = Path(__file__).resolve().parent.parent / "assets" / "letterhead"
+_LOGO_IMG = _LETTERHEAD_DIR / "logo.png"
+_PAGE_W = 210.0
+_PAGE_H = 297.0
+_MARGIN_X = 14.0
+_CONTENT_W = _PAGE_W - (2 * _MARGIN_X)
+_ACCENT = (241, 90, 36)
+_HEADER_H = 22.0
+_FOOTER_H = 22.0
+_TOP_GAP = 8.0
+_HEADER_TO_BODY = 2.0
+_BOTTOM_GAP = 8.0
+
+
+def _draw_letterhead_header(pdf: FPDF, *, y: float) -> float:
+    """Sharp header: logo PNG + vector text (not stretched letterhead scan)."""
+    logo_s = 14.0
+    x = _MARGIN_X
+    if _LOGO_IMG.is_file():
+        pdf.image(str(_LOGO_IMG), x=x, y=y, w=logo_s, h=logo_s)
+        text_x = x + logo_s + 3.0
+    else:
+        text_x = x
+
+    pdf.set_xy(text_x, y + 1.0)
+    pdf.set_text_color(110, 110, 110)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.cell(60, 4, "INDUSTRY", ln=True)
+    pdf.set_x(text_x)
+    pdf.set_text_color(40, 40, 40)
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(60, 7, "PRIME", ln=False)
+
+    pdf.set_text_color(100, 100, 100)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_xy(_MARGIN_X, y + 4.5)
+    pdf.cell(_CONTENT_W, 4, "www.industryprime.com", align="R", ln=False)
+    pdf.set_text_color(0, 0, 0)
+    return y + _HEADER_H
+
+
+def _draw_letterhead_footer(pdf: FPDF, *, y: float) -> None:
+    """Sharp footer: company text + orange baseline + skyline polyline."""
+    pdf.set_xy(_MARGIN_X, y)
+    pdf.set_text_color(20, 20, 20)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(_CONTENT_W * 0.55, 4.5, "Industrify Technologies Pvt. Ltd.", ln=True)
+    pdf.set_x(_MARGIN_X)
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(80, 80, 80)
+    pdf.multi_cell(
+        _CONTENT_W * 0.55,
+        3.5,
+        "2A, Ganesh Chandra Avenue, 4th Floor, Room No. 8C, Kolkata - 700001",
+    )
+    pdf.set_text_color(0, 0, 0)
+
+    line_y = y + 16.0
+    pdf.set_draw_color(*_ACCENT)
+    pdf.set_line_width(0.45)
+    # Baseline under address through skyline
+    mid = _MARGIN_X + _CONTENT_W * 0.52
+    pdf.line(_MARGIN_X, line_y, mid, line_y)
+
+    # Industrial skyline — rectangular blocks (vector = print-sharp)
+    span = _CONTENT_W * 0.48
+    blocks = (
+        (0.00, 0.08, 0),
+        (0.08, 0.14, 9),
+        (0.16, 0.24, 16),
+        (0.26, 0.34, 7),
+        (0.36, 0.46, 22),
+        (0.48, 0.56, 11),
+        (0.58, 0.68, 18),
+        (0.70, 0.80, 26),
+        (0.82, 0.90, 12),
+        (0.92, 1.00, 8),
+    )
+    x_cursor = mid
+    for t0, t1, h in blocks:
+        x0 = mid + span * t0
+        x1 = mid + span * t1
+        if x0 > x_cursor:
+            pdf.line(x_cursor, line_y, x0, line_y)
+        if h <= 0:
+            pdf.line(x0, line_y, x1, line_y)
+        else:
+            pdf.line(x0, line_y, x0, line_y - h)
+            pdf.line(x0, line_y - h, x1, line_y - h)
+            pdf.line(x1, line_y - h, x1, line_y)
+        x_cursor = x1
+    pdf.set_line_width(0.2)
+    pdf.set_draw_color(220, 220, 220)
 
 
 def _payslip_ref(year: int, month: int, employee_code: str) -> str:
@@ -90,88 +185,88 @@ def build_payslip_pdf_bytes(
     month_title = calendar.month_name[month] + f" {year}"
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=12)
+    footer_y = _PAGE_H - _FOOTER_H - _BOTTOM_GAP
+    body_top = _TOP_GAP + _HEADER_H + _HEADER_TO_BODY
+
+    pdf.set_auto_page_break(auto=True, margin=(_PAGE_H - footer_y) + 4)
     pdf.add_page()
-    pdf.set_margins(12, 12, 12)
+    pdf.set_margins(_MARGIN_X, body_top, _MARGIN_X)
     pdf.set_draw_color(220, 220, 220)
     pdf.set_fill_color(255, 255, 255)
 
-    y = pdf.get_y()
-    # Header row
-    pdf.set_font("Helvetica", "B", 18)
-    pdf.cell(100, 9, "IndustryPrime", ln=False)
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 9, "PAYSLIP", align="R", ln=True)
-    pdf.set_font("Helvetica", "", 8)
-    pdf.set_text_color(100, 100, 100)
-    pdf.cell(100, 5, "ATTENDANCE & HRIS PLATFORM", ln=False)
+    _draw_letterhead_header(pdf, y=_TOP_GAP)
+
+    pdf.set_y(body_top)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(_CONTENT_W * 0.45, 5, "PAYSLIP", ln=False)
     pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(80, 80, 80)
     pdf.cell(0, 5, month_title, align="R", ln=True)
     pdf.set_font("Courier", "", 8)
-    pdf.cell(0, 4, ref, align="R", ln=True)
+    pdf.cell(0, 3.5, ref, align="R", ln=True)
     pdf.set_text_color(0, 0, 0)
-    pdf.ln(2)
+    pdf.ln(1.5)
 
     # Employee band (gray)
     pdf.set_fill_color(244, 244, 245)
-    band_h = 36
-    pdf.rect(12, pdf.get_y(), 186, band_h, "F")
+    band_h = 32
+    pdf.rect(_MARGIN_X, pdf.get_y(), _CONTENT_W, band_h, "F")
     y0 = pdf.get_y()
-    pdf.set_xy(14, y0 + 3)
+    pdf.set_xy(_MARGIN_X + 2, y0 + 2.5)
     pdf.set_font("Helvetica", "B", 7)
-    pdf.cell(45, 4, "EMPLOYEE", ln=False)
-    pdf.cell(45, 4, "EMPLOYEE ID", ln=True)
+    pdf.cell(45, 3.5, "EMPLOYEE", ln=False)
+    pdf.cell(45, 3.5, "EMPLOYEE ID", ln=True)
     pdf.set_font("Helvetica", "", 9)
-    pdf.set_x(14)
-    pdf.cell(45, 5, name[:42], ln=False)
-    pdf.cell(45, 5, code or "-", ln=True)
+    pdf.set_x(_MARGIN_X + 2)
+    pdf.cell(45, 4.5, name[:42], ln=False)
+    pdf.cell(45, 4.5, code or "-", ln=True)
 
-    pdf.set_xy(14, y0 + 14)
+    pdf.set_xy(_MARGIN_X + 2, y0 + 12)
     pdf.set_font("Helvetica", "B", 7)
-    pdf.cell(45, 4, "DESIGNATION", ln=False)
-    pdf.cell(45, 4, "DEPARTMENT", ln=True)
+    pdf.cell(45, 3.5, "DESIGNATION", ln=False)
+    pdf.cell(45, 3.5, "DEPARTMENT", ln=True)
     pdf.set_font("Helvetica", "", 9)
-    pdf.set_x(14)
-    pdf.cell(45, 5, desig[:42], ln=False)
-    pdf.cell(45, 5, dept[:42], ln=True)
+    pdf.set_x(_MARGIN_X + 2)
+    pdf.cell(45, 4.5, desig[:42], ln=False)
+    pdf.cell(45, 4.5, dept[:42], ln=True)
 
-    pdf.set_xy(14, y0 + 25)
+    pdf.set_xy(_MARGIN_X + 2, y0 + 21.5)
     pdf.set_font("Helvetica", "B", 7)
-    pdf.cell(45, 4, "MONTHLY SALARY", ln=False)
-    pdf.cell(45, 4, "PAYMENT MODE", ln=True)
+    pdf.cell(45, 3.5, "MONTHLY SALARY", ln=False)
+    pdf.cell(45, 3.5, "PAYMENT MODE", ln=True)
     pdf.set_font("Helvetica", "", 9)
-    pdf.set_x(14)
-    pdf.cell(45, 5, _rupees(ps["monthly_salary"], False) + " / month", ln=False)
-    pdf.cell(45, 5, "Bank transfer", ln=True)
+    pdf.set_x(_MARGIN_X + 2)
+    pdf.cell(45, 4.5, _rupees(ps["monthly_salary"], False) + " / month", ln=False)
+    pdf.cell(45, 4.5, "Bank transfer", ln=True)
 
     pdf.set_y(y0 + band_h + 2)
 
     # Attendance 4 columns
     pdf.set_font("Helvetica", "B", 7)
-    col_w = 186 / 4
-    x0 = 12
+    col_w = _CONTENT_W / 4
+    x0 = _MARGIN_X
     y_att = pdf.get_y()
-    pdf.rect(x0, y_att, 186, 16, "D")
+    pdf.rect(x0, y_att, _CONTENT_W, 14, "D")
     vals = [ps["working_days"], ps["present_days"], ps["absent_days"], late_days]
     labels = ["WORKING", "PRESENT", "ABSENT", "LATE"]
     for i, (lab, val) in enumerate(zip(labels, vals)):
         x = x0 + i * col_w
         if i:
-            pdf.line(x, y_att, x, y_att + 16)
-        pdf.set_xy(x, y_att + 2)
-        pdf.set_font("Helvetica", "B", 12)
+            pdf.line(x, y_att, x, y_att + 14)
+        pdf.set_xy(x, y_att + 1.5)
+        pdf.set_font("Helvetica", "B", 11)
         if lab == "ABSENT":
             pdf.set_text_color(220, 38, 38)
         else:
             pdf.set_text_color(0, 0, 0)
-        pdf.cell(col_w, 8, str(val), align="C", ln=False)
+        pdf.cell(col_w, 7, str(val), align="C", ln=False)
     pdf.set_text_color(0, 0, 0)
     for i, lab in enumerate(labels):
         x = x0 + i * col_w
-        pdf.set_xy(x, y_att + 10)
+        pdf.set_xy(x, y_att + 8.5)
         pdf.set_font("Helvetica", "B", 6)
-        pdf.cell(col_w, 5, lab, align="C", ln=False)
-    pdf.set_y(y_att + 18)
+        pdf.cell(col_w, 4.5, lab, align="C", ln=False)
+    pdf.set_y(y_att + 16)
 
     # Leave balance row (3 columns)
     paid_leave = float(leave_covered_days or ps.get("leave_covered_days") or 0)
@@ -179,19 +274,19 @@ def build_payslip_pdf_bytes(
     balance_label = _format_balance_leave(total_leave, balance_leave)
     y_leave = pdf.get_y()
     pdf.set_fill_color(249, 250, 251)
-    pdf.rect(x0, y_leave, 186, 14, "FD")
+    pdf.rect(x0, y_leave, _CONTENT_W, 12, "FD")
     leave_vals = [balance_label, _format_days(paid_leave), _format_days(lop_leave)]
     leave_labels = ["BALANCE LEAVE", "ON LEAVE (PAID)", "LOP (SALARY CUT)"]
-    col_w3 = 186 / 3
+    col_w3 = _CONTENT_W / 3
     for i, (lab, val) in enumerate(zip(leave_labels, leave_vals)):
         x = x0 + i * col_w3
         if i:
-            pdf.line(x, y_leave, x, y_leave + 14)
-        pdf.set_xy(x, y_leave + 2)
+            pdf.line(x, y_leave, x, y_leave + 12)
+        pdf.set_xy(x, y_leave + 1.5)
         pdf.set_font("Helvetica", "B", 6)
         pdf.set_text_color(100, 100, 100)
-        pdf.cell(col_w3, 4, lab, align="C", ln=False)
-        pdf.set_xy(x, y_leave + 7)
+        pdf.cell(col_w3, 3.5, lab, align="C", ln=False)
+        pdf.set_xy(x, y_leave + 5.5)
         pdf.set_font("Helvetica", "B", 9)
         if lab == "ON LEAVE (PAID)":
             pdf.set_text_color(4, 120, 87)
@@ -199,16 +294,17 @@ def build_payslip_pdf_bytes(
             pdf.set_text_color(220, 38, 38)
         else:
             pdf.set_text_color(0, 0, 0)
-        pdf.cell(col_w3, 6, val, align="C", ln=False)
+        pdf.cell(col_w3, 5.5, val, align="C", ln=False)
     pdf.set_text_color(0, 0, 0)
-    pdf.set_y(y_leave + 16)
+    pdf.set_y(y_leave + 14)
 
     # Two columns earnings / deductions
     pdf.set_font("Helvetica", "B", 8)
-    pdf.cell(93, 6, "EARNINGS", ln=False)
-    pdf.cell(93, 6, "DEDUCTIONS", ln=True)
+    half = _CONTENT_W / 2
+    pdf.cell(half, 5, "EARNINGS", ln=False)
+    pdf.cell(half, 5, "DEDUCTIONS", ln=True)
     pdf.set_font("Helvetica", "", 8)
-    row_h = 6
+    row_h = 5.2
     rows_pdf = [
         ("Salary", earn["salary"], False, "PF (employee 12%)", ded["pf_employee"], disp["pf_blank"]),
         ("HRA", earn["hra"], disp["hra_blank"], "Professional tax", ded["professional_tax"], disp["professional_tax_blank"]),
@@ -230,39 +326,45 @@ def build_payslip_pdf_bytes(
             disp["late_blank"],
         ),
     ]
-    y_tbl = pdf.get_y()
+    label_w = half * 0.58
+    value_w = half - label_w
     for el, ev, eb, dl, dv, db in rows_pdf:
-        pdf.set_x(12)
-        pdf.cell(55, row_h, el[:32], ln=False)
-        pdf.cell(38, row_h, _rupees(ev, eb), align="R", ln=False)
-        pdf.cell(55, row_h, dl[:32], ln=False)
-        pdf.cell(38, row_h, _rupees_minus(dv, db), align="R", ln=True)
+        pdf.set_x(_MARGIN_X)
+        pdf.cell(label_w, row_h, el[:32], ln=False)
+        pdf.cell(value_w, row_h, _rupees(ev, eb), align="R", ln=False)
+        pdf.cell(label_w, row_h, dl[:32], ln=False)
+        pdf.cell(value_w, row_h, _rupees_minus(dv, db), align="R", ln=True)
     pdf.set_font("Helvetica", "B", 8)
-    pdf.set_x(12)
-    pdf.cell(55, row_h, "Gross earned", ln=False)
-    pdf.cell(38, row_h, _rupees(earn["gross_earned"], False), align="R", ln=False)
-    pdf.cell(55, row_h, "Total deductions", ln=False)
-    pdf.cell(38, row_h, _rupees_minus(ded["total"], False), align="R", ln=True)
+    pdf.set_x(_MARGIN_X)
+    pdf.cell(label_w, row_h, "Gross earned", ln=False)
+    pdf.cell(value_w, row_h, _rupees(earn["gross_earned"], False), align="R", ln=False)
+    pdf.cell(label_w, row_h, "Total deductions", ln=False)
+    pdf.cell(value_w, row_h, _rupees_minus(ded["total"], False), align="R", ln=True)
 
-    pdf.ln(4)
+    pdf.ln(3)
     # Net bar
     y_net = pdf.get_y()
     pdf.set_fill_color(244, 244, 245)
-    pdf.rect(12, y_net, 186, 18, "F")
-    pdf.set_xy(14, y_net + 3)
+    pdf.rect(_MARGIN_X, y_net, _CONTENT_W, 15, "F")
+    pdf.set_xy(_MARGIN_X + 2, y_net + 2.5)
     pdf.set_font("Helvetica", "B", 7)
-    pdf.cell(90, 5, "NET TAKE-HOME PAY", ln=False)
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 5, _rupees(ps["net_pay"], False), align="R", ln=True)
-    pdf.set_xy(14, y_net + 10)
+    pdf.cell(90, 4.5, "NET TAKE-HOME PAY", ln=False)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 4.5, _rupees(ps["net_pay"], False), align="R", ln=True)
+    pdf.set_xy(_MARGIN_X + 2, y_net + 8.5)
     pdf.set_font("Helvetica", "", 7)
-    pdf.cell(0, 5, f"{month_title} - {name[:40]}", ln=True)
-    pdf.set_y(y_net + 20)
+    pdf.cell(0, 4.5, f"{month_title} - {name[:40]}", ln=True)
+    pdf.set_y(y_net + 17)
 
     pdf.set_font("Helvetica", "I", 7)
     pdf.set_text_color(150, 150, 150)
-    pdf.cell(0, 5, "System generated", align="C", ln=True)
+    pdf.cell(0, 4, "System generated", align="C", ln=True)
     pdf.set_text_color(0, 0, 0)
+
+    if pdf.get_y() > footer_y - 2:
+        pdf.add_page()
+        _draw_letterhead_header(pdf, y=_TOP_GAP)
+    _draw_letterhead_footer(pdf, y=footer_y)
 
     out = pdf.output()
     return bytes(out)

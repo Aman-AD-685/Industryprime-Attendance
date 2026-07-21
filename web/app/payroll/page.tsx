@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PayslipLetterheadFooter, PayslipLetterheadHeader } from "@/components/payroll/PayslipLetterhead";
 import { apiFetch, apiFetchBlob, PAYROLL_API_TIMEOUT_MS } from "@/lib/api";
 import { getStoredUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -198,31 +199,26 @@ function PayslipDocument({
 
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white text-zinc-900 shadow-md ring-1 ring-black/5 dark:border-zinc-300 dark:bg-white dark:text-zinc-900 dark:ring-zinc-400/30">
-      {/* Header — brand left, payslip meta right */}
-      <div className="flex flex-col justify-between gap-4 border-b border-zinc-200 bg-white px-5 py-4 sm:flex-row sm:items-start">
-        <div className="flex items-start gap-3">
-          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red-600" aria-hidden />
-          <div>
-            <div className="text-xl font-extrabold tracking-tight text-zinc-900">IndustryPrime</div>
-            <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">{"Attendance & HRIS platform"}</div>
-            {variantLabel ? (
-              <div className="mt-2 inline-block rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600">
-                {variantLabel}
-              </div>
-            ) : null}
-          </div>
+      <PayslipLetterheadHeader />
+      <div className="flex flex-col justify-between gap-1 border-b border-zinc-200 px-5 pb-2.5 pt-1 sm:flex-row sm:items-end">
+        <div>
+          <div className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-800">Payslip</div>
+          {variantLabel ? (
+            <div className="mt-1 inline-block rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600">
+              {variantLabel}
+            </div>
+          ) : null}
         </div>
         <div className="text-left sm:text-right">
-          <div className="text-xs font-bold uppercase tracking-[0.25em] text-zinc-800">Payslip</div>
-          <div className="mt-1 text-sm font-semibold text-zinc-700">{monthLabel(ps.month, ps.year)}</div>
-          <div className="mt-1 font-mono text-xs text-zinc-500">{ref}</div>
+          <div className="text-sm font-semibold text-zinc-700">{monthLabel(ps.month, ps.year)}</div>
+          <div className="mt-0.5 font-mono text-xs text-zinc-500">{ref}</div>
         </div>
       </div>
 
       {/* Employee band */}
-      <div className="border-b border-zinc-200 bg-zinc-100 px-5 py-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <dl className="space-y-2.5 text-sm">
+      <div className="border-b border-zinc-200 bg-zinc-100 px-5 py-3.5">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <dl className="space-y-2 text-sm">
             <div>
               <dt className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">Employee</dt>
               <dd className="font-semibold text-zinc-900">{e.name || "—"}</dd>
@@ -236,7 +232,7 @@ function PayslipDocument({
               <dd className="font-semibold text-zinc-900">{money(ps.monthly_salary, false)} / month</dd>
             </div>
           </dl>
-          <dl className="space-y-2.5 text-sm">
+          <dl className="space-y-2 text-sm">
             <div>
               <dt className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">Employee ID</dt>
               <dd className="font-mono font-semibold text-zinc-900">{e.employee_code || "—"}</dd>
@@ -263,7 +259,7 @@ function PayslipDocument({
             { k: "LOP", v: ps.lop_days ?? item.leave?.lop_days ?? 0, red: true },
           ] as const
         ).map((c) => (
-          <div key={c.k} className="px-2 py-3 text-center sm:px-3 sm:py-4">
+          <div key={c.k} className="px-2 py-3 text-center sm:px-3 sm:py-3.5">
             <div className={`text-xl font-bold tabular-nums sm:text-2xl ${c.red ? "text-red-600" : "text-zinc-900"}`}>{c.v}</div>
             <div className="mt-1 text-[9px] font-bold uppercase tracking-wide text-zinc-500 sm:text-[10px]">{c.k}</div>
           </div>
@@ -289,62 +285,62 @@ function PayslipDocument({
 
       {/* Earnings | Deductions */}
       <div className="grid border-b border-zinc-200 bg-white sm:grid-cols-2">
-        <div className="border-b border-zinc-200 px-4 py-4 sm:border-b-0 sm:border-r sm:border-zinc-200">
+        <div className="border-b border-zinc-200 px-4 py-3.5 sm:border-b-0 sm:border-r sm:border-zinc-200">
           <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">Earnings</div>
-          <table className="mt-3 w-full text-sm">
+          <table className="mt-2.5 w-full text-sm">
             <tbody>
               <tr className="border-b border-zinc-100">
-                <td className="py-2 text-zinc-600">Salary</td>
-                <td className="py-2 text-right font-medium text-zinc-900">{money(ps.earnings.salary, false)}</td>
+                <td className="py-1.5 text-zinc-600">Salary</td>
+                <td className="py-1.5 text-right font-medium text-zinc-900">{money(ps.earnings.salary, false)}</td>
               </tr>
               <tr className="border-b border-zinc-100">
-                <td className="py-2 text-zinc-600">HRA</td>
-                <td className="py-2 text-right font-medium text-zinc-900">{money(ps.earnings.hra, d.hra_blank)}</td>
+                <td className="py-1.5 text-zinc-600">HRA</td>
+                <td className="py-1.5 text-right font-medium text-zinc-900">{money(ps.earnings.hra, d.hra_blank)}</td>
               </tr>
               <tr className="border-b border-zinc-100">
-                <td className="py-2 text-zinc-600">Conveyance allowance</td>
-                <td className="py-2 text-right font-medium text-zinc-900">{money(ps.earnings.conveyance, d.conveyance_blank)}</td>
+                <td className="py-1.5 text-zinc-600">Conveyance allowance</td>
+                <td className="py-1.5 text-right font-medium text-zinc-900">{money(ps.earnings.conveyance, d.conveyance_blank)}</td>
               </tr>
               <tr className="border-b border-zinc-100">
-                <td className="py-2 text-zinc-600">Mobile allowance</td>
-                <td className="py-2 text-right font-medium text-zinc-900">{money(ps.earnings.special_allowance, d.special_allowance_blank)}</td>
+                <td className="py-1.5 text-zinc-600">Mobile allowance</td>
+                <td className="py-1.5 text-right font-medium text-zinc-900">{money(ps.earnings.special_allowance, d.special_allowance_blank)}</td>
               </tr>
               <tr>
-                <td className="pt-3 text-xs font-bold uppercase text-zinc-800">Gross earned</td>
-                <td className="pt-3 text-right text-base font-bold text-zinc-900">{money(ps.earnings.gross_earned, false)}</td>
+                <td className="pt-2.5 text-xs font-bold uppercase text-zinc-800">Gross earned</td>
+                <td className="pt-2.5 text-right text-base font-bold text-zinc-900">{money(ps.earnings.gross_earned, false)}</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-4">
+        <div className="px-4 py-3.5">
           <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">Deductions</div>
-          <table className="mt-3 w-full text-sm">
+          <table className="mt-2.5 w-full text-sm">
             <tbody>
               <tr className="border-b border-zinc-100">
-                <td className="py-2 text-zinc-600">PF (employee 12%)</td>
-                <td className="py-2 text-right font-medium text-zinc-900">{moneySignedDeduction(ps.deductions.pf_employee, d.pf_blank)}</td>
+                <td className="py-1.5 text-zinc-600">PF (employee 12%)</td>
+                <td className="py-1.5 text-right font-medium text-zinc-900">{moneySignedDeduction(ps.deductions.pf_employee, d.pf_blank)}</td>
               </tr>
               <tr className="border-b border-zinc-100">
-                <td className="py-2 text-zinc-600">Professional tax</td>
-                <td className="py-2 text-right font-medium text-zinc-900">{moneySignedDeduction(ps.deductions.professional_tax, d.professional_tax_blank)}</td>
+                <td className="py-1.5 text-zinc-600">Professional tax</td>
+                <td className="py-1.5 text-right font-medium text-zinc-900">{moneySignedDeduction(ps.deductions.professional_tax, d.professional_tax_blank)}</td>
               </tr>
               <tr className="border-b border-zinc-100">
-                <td className="py-2 text-zinc-600">Income tax (TDS)</td>
-                <td className="py-2 text-right font-medium text-zinc-900">{moneySignedDeduction(ps.deductions.income_tax_tds, d.tds_blank)}</td>
+                <td className="py-1.5 text-zinc-600">Income tax (TDS)</td>
+                <td className="py-1.5 text-right font-medium text-zinc-900">{moneySignedDeduction(ps.deductions.income_tax_tds, d.tds_blank)}</td>
               </tr>
               <tr className="border-b border-zinc-100">
-                <td className="py-2 text-zinc-600">LOP deduction</td>
-                <td className="py-2 text-right font-medium text-zinc-900">
+                <td className="py-1.5 text-zinc-600">LOP deduction</td>
+                <td className="py-1.5 text-right font-medium text-zinc-900">
                   {moneySignedDeduction(ps.deductions.lop_deduction, d.lop_blank ?? true)}
                 </td>
               </tr>
               <tr className="border-b border-zinc-100">
-                <td className="py-2 text-zinc-600">Late deduction</td>
-                <td className="py-2 text-right font-medium text-zinc-900">{moneySignedDeduction(ps.deductions.late_deduction, d.late_blank)}</td>
+                <td className="py-1.5 text-zinc-600">Late deduction</td>
+                <td className="py-1.5 text-right font-medium text-zinc-900">{moneySignedDeduction(ps.deductions.late_deduction, d.late_blank)}</td>
               </tr>
               <tr>
-                <td className="pt-3 text-xs font-bold uppercase text-zinc-800">Total deductions</td>
-                <td className="pt-3 text-right text-base font-bold text-zinc-900">{moneySignedDeduction(ps.deductions.total, false)}</td>
+                <td className="pt-2.5 text-xs font-bold uppercase text-zinc-800">Total deductions</td>
+                <td className="pt-2.5 text-right text-base font-bold text-zinc-900">{moneySignedDeduction(ps.deductions.total, false)}</td>
               </tr>
             </tbody>
           </table>
@@ -352,7 +348,7 @@ function PayslipDocument({
       </div>
 
       {/* Net pay bar */}
-      <div className="flex flex-col gap-4 bg-zinc-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 bg-zinc-100 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           {onDownloadPdf ? (
             <button
@@ -376,7 +372,10 @@ function PayslipDocument({
         </div>
         <div className="text-2xl font-bold tabular-nums text-zinc-900 sm:text-3xl">{money(ps.net_pay, false)}</div>
       </div>
-      <p className="border-t border-zinc-200 bg-zinc-50 py-2 text-center text-[9px] font-semibold uppercase tracking-widest text-zinc-400">System generated</p>
+      <p className="border-t border-zinc-200 bg-zinc-50 py-1.5 text-center text-[9px] font-semibold uppercase tracking-widest text-zinc-400">
+        System generated
+      </p>
+      <PayslipLetterheadFooter />
     </div>
   );
 }
