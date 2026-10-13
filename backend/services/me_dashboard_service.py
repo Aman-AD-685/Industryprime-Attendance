@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from calendar import monthrange
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -56,7 +57,12 @@ def _find_employee(supabase: SupabaseRest, email: str) -> Optional[Dict[str, Any
     if not em:
         return None
     try:
-        rows = supabase.select(table="employees", select="*", where_eq=None, limit=None)
+        rows = supabase.select(
+            table="employees",
+            select="id,email,name,department,designation,created_at",
+            where_eq=None,
+            limit=None,
+        )
     except Exception:
         return None
     for r in rows or []:
@@ -88,23 +94,28 @@ def _holiday_dates_between(supabase: SupabaseRest, start: date, end: date) -> Se
     return out
 
 
+def _employee_leave_requests(supabase: SupabaseRest, employee_id: str) -> List[Dict[str, Any]]:
+    """All leave requests for one employee (one fetch; sliced in memory by the helpers below)."""
+    try:
+        rows = supabase.select(
+            table="leave_requests",
+            select="leave_date_start,leave_date_end,leave_type,status,days,reason",
+            where_eq={"employee_id": employee_id},
+            order="leave_date_start.asc",
+            limit=500,
+        )
+    except Exception:
+        return []
+    return list(rows or [])
+
+
 def _approved_leave_dates(
-    supabase: SupabaseRest,
-    employee_id: str,
+    rows: List[Dict[str, Any]],
     start: date,
     end: date,
 ) -> Set[date]:
     """Calendar dates covered by approved leave in [start, end]."""
     out: Set[date] = set()
-    try:
-        rows = supabase.select(
-            table="leave_requests",
-            select="leave_date_start,leave_date_end,status",
-            where_eq={"employee_id": employee_id},
-            limit=500,
-        )
-    except Exception:
-        return out
     for r in rows or []:
         if str(r.get("status") or "").lower() != "approved":
             continue
@@ -212,9 +223,7 @@ def _minutes_worked_today(row: Optional[Dict[str, Any]], today: date) -> Tuple[i
     return mins, "working", check_in_iso, check_out_iso
 
 
-def _leave_balance_breakdown(supabase: SupabaseRest, employee_id: str, year: int) -> Tuple[float, float, str]:
-    """(allocated, used_approved_days, breakdown label)."""
-    allocated = 0.0
+def _leave_allocated(supabase: SupabaseRest, employee_id: str, year: int) -> float:
     try:
         bal = supabase.select(
             table="leave_balances",
@@ -223,29 +232,24 @@ def _leave_balance_breakdown(supabase: SupabaseRest, employee_id: str, year: int
             limit=1,
         )
         if bal:
-            allocated = float(bal[0].get("total_leave") or 0)
+            return float(bal[0].get("total_leave") or 0)
     except Exception:
         pass
+    return 0.0
 
+
+def _leave_balance_breakdown(allocated: float, reqs: List[Dict[str, Any]]) -> Tuple[float, float, str]:
+    """(allocated, used_approved_days, breakdown label)."""
     used_by_type: Dict[str, float] = defaultdict(float)
     used_total = 0.0
-    try:
-        reqs = supabase.select(
-            table="leave_requests",
-            select="leave_type,status,days",
-            where_eq={"employee_id": employee_id},
-            limit=500,
-        )
-        for r in reqs or []:
-            st = str(r.get("status") or "").lower()
-            if st != "approved":
-                continue
-            lt = str(r.get("leave_type") or "Leave").strip() or "Leave"
-            d = float(r.get("days") or 0)
-            used_by_type[lt] += d
-            used_total += d
-    except Exception:
-        pass
+    for r in reqs or []:
+        st = str(r.get("status") or "").lower()
+        if st != "approved":
+            continue
+        lt = str(r.get("leave_type") or "Leave").strip() or "Leave"
+        d = float(r.get("days") or 0)
+        used_by_type[lt] += d
+        used_total += d
 
     if used_by_type:
         parts = [f"{k[:3]} {v:g}" for k, v in sorted(used_by_type.items(), key=lambda x: -x[1])[:4]]
@@ -282,13 +286,46 @@ def get_me_dashboard(*, supabase: SupabaseRest, auth_email: str, today: Optional
     first_m, last_m = _month_range(d)
     month_start = first_m
     month_end = min(d, last_m)
+    seven_start = d - timedelta(days=6)
+    prev_first = date(d.year, d.month, 1) - timedelta(days=1)
+    prev_month_end = date(prev_first.year, prev_first.month, monthrange(prev_first.year, prev_first.month)[1])
+    prev_month_start = date(prev_first.year, prev_first.month, 1)
+    range_start = min(prev_month_start, seven_start)
 
-    hol_m = _holiday_dates_between(supabase, month_start, month_end)
-    hol_7 = _holiday_dates_between(supabase, d - timedelta(days=6), d)
-    leave_m = _approved_leave_dates(supabase, emp_id, month_start, month_end)
+    # Everything below is independent: fetch the whole prev-month..today window once, in
+    # parallel, and slice per period in memory (one round trip instead of a dozen).
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        fut_hol = pool.submit(_holiday_dates_between, supabase, range_start, month_end)
+        fut_att = pool.submit(_attendance_for_range, supabase, emp_id, range_start, month_end)
+        fut_reqs = pool.submit(_employee_leave_requests, supabase, emp_id)
+        fut_alloc = pool.submit(_leave_allocated, supabase, emp_id, d.year)
+        fut_next_h = pool.submit(_next_holiday, supabase, d)
+        hol_all = fut_hol.result()
+        att_all = fut_att.result()
+        leave_reqs = fut_reqs.result()
+        allocated_raw = fut_alloc.result()
+        upcoming_h = fut_next_h.result()
 
-    att_month = _attendance_for_range(supabase, emp_id, month_start, month_end)
-    att_7 = _attendance_for_range(supabase, emp_id, d - timedelta(days=6), d)
+    def _dates_between(days: Set[date], a: date, b: date) -> Set[date]:
+        return {x for x in days if a <= x <= b}
+
+    def _rows_between(rows: List[Dict[str, Any]], a: date, b: date) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for r in rows:
+            try:
+                dd = date.fromisoformat(str(r.get("date"))[:10])
+            except ValueError:
+                continue
+            if a <= dd <= b:
+                out.append(r)
+        return out
+
+    hol_m = _dates_between(hol_all, month_start, month_end)
+    hol_7 = _dates_between(hol_all, seven_start, d)
+    leave_m = _approved_leave_dates(leave_reqs, month_start, month_end)
+
+    att_month = _rows_between(att_all, month_start, month_end)
+    att_7 = _rows_between(att_all, seven_start, d)
 
     present_dates_m: Set[date] = set()
     hours_month: List[float] = []
@@ -311,15 +348,12 @@ def get_me_dashboard(*, supabase: SupabaseRest, auth_email: str, today: Optional
     expected_working = _weekday_working_days(month_start, month_end, hol_m)
     present_current = len(present_dates_m)
 
-    prev_first = date(d.year, d.month, 1) - timedelta(days=1)
-    prev_month_end = date(prev_first.year, prev_first.month, monthrange(prev_first.year, prev_first.month)[1])
-    prev_month_start = date(prev_first.year, prev_first.month, 1)
-    prev_att = _attendance_for_range(supabase, emp_id, prev_month_start, prev_month_end)
-    hol_prev = _holiday_dates_between(supabase, prev_month_start, prev_month_end)
-    leave_prev = _approved_leave_dates(supabase, emp_id, prev_month_start, prev_month_end)
+    prev_att = _rows_between(att_all, prev_month_start, prev_month_end)
+    hol_prev = _dates_between(hol_all, prev_month_start, prev_month_end)
+    leave_prev = _approved_leave_dates(leave_reqs, prev_month_start, prev_month_end)
     late_prev = _count_late_arrivals(prev_att, holiday_dates=hol_prev, leave_dates=leave_prev)
 
-    allocated, used_leave, breakdown = _leave_balance_breakdown(supabase, emp_id, d.year)
+    allocated, used_leave, breakdown = _leave_balance_breakdown(allocated_raw, leave_reqs)
     avg_hours = sum(hours_month) / len(hours_month) if hours_month else 0.0
     target_hours = 8.0
     delta_avg = round(avg_hours - target_hours, 1) if hours_month else 0.0
@@ -336,11 +370,10 @@ def get_me_dashboard(*, supabase: SupabaseRest, auth_email: str, today: Optional
     loc = str(emp.get("department") or "").strip() or "HQ"
     shift_name = str(emp.get("designation") or "").strip() or "General shift"
 
-    leave_7 = _approved_leave_dates(supabase, emp_id, d - timedelta(days=6), d)
+    leave_7 = _approved_leave_dates(leave_reqs, seven_start, d)
     last7 = _build_last_7_days(d, att_7, hol_7, leave_7)
 
-    upcoming_h = _next_holiday(supabase, d)
-    upcoming_l = _next_leave(supabase, emp_id, d)
+    upcoming_l = _next_leave(leave_reqs, d)
 
     return {
         "updatedAt": datetime.now().isoformat(),
@@ -472,17 +505,7 @@ def _next_holiday(supabase: SupabaseRest, today: date) -> Optional[Dict[str, Any
     return {"date": hd, "title": title, "subline": "Office closed · plan leave accordingly"}
 
 
-def _next_leave(supabase: SupabaseRest, employee_id: str, today: date) -> Optional[Dict[str, Any]]:
-    try:
-        rows = supabase.select(
-            table="leave_requests",
-            select="leave_date_start,leave_date_end,leave_type,status,reason",
-            where_eq={"employee_id": employee_id},
-            order="leave_date_start.asc",
-            limit=50,
-        )
-    except Exception:
-        return None
+def _next_leave(rows: List[Dict[str, Any]], today: date) -> Optional[Dict[str, Any]]:
     for r in rows or []:
         st = str(r.get("status") or "").lower()
         if st not in {"approved", "pending"}:

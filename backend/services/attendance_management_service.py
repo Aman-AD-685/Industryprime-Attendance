@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import calendar
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -8,6 +10,7 @@ from fastapi import HTTPException
 
 from database.supabase_client import SupabaseRest
 from services.attendance_link_entry_service import link_entries_by_date_for_month
+from services.monthly_snapshot_cache import invalidate_year
 from services.working_hours import calculate_working_minutes, hhmm_value_to_minutes, minutes_to_hhmm_display, minutes_to_hhmm_float, parse_time_like
 
 # Employees in this set get empty Saturday + Sunday treated as Present (no punches).
@@ -108,6 +111,38 @@ def _late_minutes_after_cutoff(in_time: time) -> int:
     return int(delta)
 
 
+# From Oct 2026 (IndustryPrime policy): IN 9:32-11:01 = Late (no CL); IN 11:02-13:30 = Half Day
+# (0.5 CL+SL deducted); IN from 13:31 = full-day CL+SL deducted. Sundays are skipped here;
+# holidays never reach this code path (handled earlier in calculate_attendance_row).
+LATE_CL_DEDUCTION_START = date(2026, 10, 1)
+_HALF_DAY_AFTER_MINUTES = 11 * 60 + 1  # IN later than 11:01
+_FULL_DAY_AFTER_MINUTES = 13 * 60 + 30  # IN later than 13:30
+HALF_DAY_LABEL = "Half Day"
+FULL_DAY_CL_LABEL = "Full Day CL"
+
+
+def late_arrival_cl_deduction(day: date, in_time: Any) -> float:
+    """CL+SL days deducted for a late IN on a working day: 0, 0.5 or 1.0."""
+    t = parse_time_like(in_time)
+    if t is None or day < LATE_CL_DEDUCTION_START or day.weekday() == 6:
+        return 0.0
+    minutes = _time_to_minutes(t)
+    if minutes > _FULL_DAY_AFTER_MINUTES:
+        return 1.0
+    if minutes > _HALF_DAY_AFTER_MINUTES:
+        return 0.5
+    return 0.0
+
+
+def _late_status_label(day: date, in_time: time, late_minutes: int, on_time_label: str) -> str:
+    deduction = late_arrival_cl_deduction(day, in_time)
+    if deduction >= 1:
+        return FULL_DAY_CL_LABEL
+    if deduction > 0:
+        return HALF_DAY_LABEL
+    return "Late" if late_minutes > 0 else on_time_label
+
+
 def calculate_attendance_row(
     day: date,
     row: Dict[str, Any],
@@ -187,11 +222,11 @@ def calculate_attendance_row(
             "use_calculated_calendar": True,
         }
 
-    # Any date: IN without OUT counts as Present (P); clock-in after 9:31 → Late.
+    # Any date: IN without OUT counts as Present (P); clock-in after 9:31 → Late / Half Day / Full Day CL.
     if in_time and not out_time:
         late_minutes = _late_minutes_after_cutoff(in_time)
         late_time = minutes_to_hhmm_float(late_minutes)
-        status_ot_sf = "Late" if late_minutes > 0 else "OK"
+        status_ot_sf = _late_status_label(day, in_time, late_minutes, "OK")
         return {
             **row,
             "date": day.isoformat(),
@@ -243,7 +278,7 @@ def calculate_attendance_row(
     late_minutes = _late_minutes_after_cutoff(in_time)
     late_time = minutes_to_hhmm_float(late_minutes)
     base_status = "OT" if working_minutes > scheduled_minutes else ("SF" if shortfall_minutes > 0 else "OK")
-    status_ot_sf = "Late" if late_minutes > 0 else base_status
+    status_ot_sf = _late_status_label(day, in_time, late_minutes, base_status)
 
     return {
         **row,
@@ -321,19 +356,26 @@ def ensure_month(
     end_day = calendar.monthrange(year, month)[1]
     end = date(year, month, end_day)
 
-    existing = supabase.select(
-        table="attendance",
-        select="*",
-        where_eq={"employee_id": employee_id},
-        where_gte={"date": start.isoformat()},
-        where_lte={"date": end.isoformat()},
-        order="date.asc",
-    )
+    # Four independent reads → one round trip.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        fut_existing = pool.submit(
+            supabase.select,
+            table="attendance",
+            select="*",
+            where_eq={"employee_id": employee_id},
+            where_gte={"date": start.isoformat()},
+            where_lte={"date": end.isoformat()},
+            order="date.asc",
+        )
+        fut_link = pool.submit(link_entries_by_date_for_month, employee_id, month, year, supabase)
+        fut_email = pool.submit(_employee_email_lower, employee_id, supabase)
+        fut_holidays = pool.submit(_holiday_labels_for_month, month, year, supabase)
+        existing = fut_existing.result()
+        link_by_date = fut_link.result()
+        email_lower = fut_email.result()
+        holiday_labels = fut_holidays.result()
     by_date = {str(row.get("date"))[:10]: row for row in existing}
-    link_by_date = link_entries_by_date_for_month(employee_id, month, year, supabase)
-    email_lower = _employee_email_lower(employee_id, supabase)
     weekend_auto = email_lower in _WEEKEND_AUTO_PRESENT_EMAILS if email_lower else False
-    holiday_labels = _holiday_labels_for_month(month, year, supabase)
 
     month_rows: List[Dict[str, Any]] = []
     for day_num in range(1, end_day + 1):
@@ -358,7 +400,12 @@ def ensure_month(
         )
         for row in month_rows
     ]
-    store_month_snapshot(employee_id, month, year, rows, supabase)
+    # Snapshot is a cache for Leave / Payroll; write it after responding, not before.
+    threading.Thread(
+        target=store_month_snapshot,
+        args=(employee_id, month, year, rows, supabase),
+        daemon=True,
+    ).start()
     return rows, holiday_labels
 
 
@@ -535,32 +582,43 @@ def update_attendance(
 def list_months(employee_id: str, supabase: SupabaseRest) -> List[Dict[str, int]]:
     current = date.today()
     months = {(current.year, current.month)}
-    try:
-        rows = supabase.select(
-            table="monthly_attendance",
-            select="month,year",
-            where_eq={"employee_id": employee_id},
-            order="year.desc,month.desc",
-        )
-    except RuntimeError as exc:
-        if "monthly_attendance" in str(exc) or "schema cache" in str(exc):
-            return [{"year": current.year, "month": current.month}]
-        raise
+
+    def _snapshot_months() -> List[Dict[str, Any]]:
+        try:
+            return supabase.select(
+                table="monthly_attendance",
+                select="month,year",
+                where_eq={"employee_id": employee_id},
+                order="year.desc,month.desc",
+            )
+        except RuntimeError as exc:
+            if "monthly_attendance" in str(exc) or "schema cache" in str(exc):
+                return []
+            raise
+
+    def _link_months() -> List[Dict[str, Any]]:
+        try:
+            return supabase.select(
+                table="attendance_link_entries",
+                select="month,year",
+                where_eq={"employee_id": employee_id},
+                limit=500,
+            ) or []
+        except RuntimeError as exc:
+            if "attendance_link_entries" not in str(exc) and "schema cache" not in str(exc).lower():
+                raise
+            return []
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_snap = pool.submit(_snapshot_months)
+        fut_link = pool.submit(_link_months)
+        rows = fut_snap.result()
+        link_rows = fut_link.result()
     for row in rows:
         months.add((int(row["year"]), int(row["month"])))
-    try:
-        link_rows = supabase.select(
-            table="attendance_link_entries",
-            select="month,year",
-            where_eq={"employee_id": employee_id},
-            limit=500,
-        )
-        for row in link_rows or []:
-            if row.get("year") is not None and row.get("month") is not None:
-                months.add((int(row["year"]), int(row["month"])))
-    except RuntimeError as exc:
-        if "attendance_link_entries" not in str(exc) and "schema cache" not in str(exc).lower():
-            raise
+    for row in link_rows:
+        if row.get("year") is not None and row.get("month") is not None:
+            months.add((int(row["year"]), int(row["month"])))
     return [{"year": year, "month": month} for year, month in sorted(months, reverse=True)]
 
 
@@ -588,3 +646,5 @@ def store_month_snapshot(
         if "monthly_attendance" in str(exc) or "schema cache" in str(exc):
             return
         raise
+    finally:
+        invalidate_year(year)

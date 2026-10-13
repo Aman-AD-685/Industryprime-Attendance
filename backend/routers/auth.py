@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Path, sta
 from pydantic import BaseModel, Field
 
 from database.supabase_client import get_supabase_service
-from dependencies.auth_dependency import get_auth_context
+from dependencies.auth_dependency import cached_user_by_id, get_auth_context, invalidate_user_cache
 from services.auth_service import (
     ALLOWED_ROLES,
     authenticate_user,
@@ -267,21 +267,27 @@ def login(payload: LoginRequest, background_tasks: BackgroundTasks):
     except HTTPException:
         raise
     except RuntimeError as exc:
+        if "env var" in str(exc).lower():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Login service is not configured correctly: {exc}",
+            ) from exc
+        # Supabase error (not a bad password): tell the browser to retry, not to give up.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Login service is not configured correctly: {exc}",
+            detail="Login service is temporarily unavailable. Please retry.",
         ) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login failed on backend: {type(exc).__name__}",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Login service is temporarily unavailable ({type(exc).__name__}). Please retry.",
         ) from exc
 
 
 @router.post("/refresh", response_model=Dict[str, Any])
 def refresh_session(payload: RefreshRequest):
     claims = decode_refresh_token(payload.refresh_token.strip())
-    user = get_user_by_id(str(claims["sub"]))
+    user = cached_user_by_id(str(claims["sub"]))
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
     return _auth_response(user)
@@ -352,5 +358,6 @@ def update_user_role(
     )
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
+    invalidate_user_cache(user_id)
     return {"user": public_user(updated)}
 

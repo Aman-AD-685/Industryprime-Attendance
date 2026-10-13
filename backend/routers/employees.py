@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import List, Optional
 
@@ -21,9 +22,28 @@ from services.employee_salary_history_service import (
     record_salary_change,
 )
 from services.employees_service import create_employee, list_employees, update_employee
+from services.hr_employees import fetch_leave_balances_for_year
+from services.leave_service import get_allocated_total_leave, update_leave_allocation
 from services.auth_service import require_role
 
 router = APIRouter()
+
+
+def _enrich_employees(supabase, rows: list[dict]) -> list[dict]:
+    """Salary meta + current-year CL + SL allotment (leave_balances.total_leave), fetched together."""
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_meta = pool.submit(enrich_employees_with_salary_meta, supabase, rows)
+        fut_bal = pool.submit(fetch_leave_balances_for_year, supabase, date.today().year)
+        enriched = fut_meta.result()
+        balances = {str(b.get("employee_id")): b for b in fut_bal.result()}
+    for row in enriched:
+        row["total_leave"] = get_allocated_total_leave(row, balances.get(str(row.get("id"))))
+    return enriched
+
+
+def _save_total_leave(supabase, employee_id: str, total_leave: Optional[float]) -> None:
+    if total_leave is not None:
+        update_leave_allocation(employee_id, date.today().year, float(total_leave), supabase)
 
 
 def _default_effective_period() -> tuple[int, int]:
@@ -43,7 +63,7 @@ def _salary_changed(old: object, new: object) -> bool:
 
 
 def _employee_out(supabase, row: dict) -> EmployeeOut:
-    enriched = enrich_employees_with_salary_meta(supabase, [row])[0]
+    enriched = _enrich_employees(supabase, [row])[0]
     return EmployeeOut(**{**enriched, "id": str(enriched.get("id", ""))})
 
 
@@ -68,7 +88,7 @@ def get_employees(
         rows = [row for row in rows if str(row.get("email") or "").strip().lower() == auth.email.strip().lower()]
     if for_month is not None and for_year is not None:
         rows = filter_employees_for_month(rows, for_month, for_year)
-    enriched = enrich_employees_with_salary_meta(supabase, rows)
+    enriched = _enrich_employees(supabase, rows)
     return [EmployeeOut(**{**r, "id": str(r.get("id", ""))}) for r in enriched]
 
 
@@ -116,6 +136,7 @@ def post_employee(
             "hra_monthly": body.hra_monthly,
             "conveyance_monthly": body.conveyance_monthly,
             "special_allowance_monthly": body.special_allowance_monthly,
+            "joining_date": body.joining_date.isoformat() if body.joining_date else None,
         },
         supabase=supabase,
     )
@@ -133,6 +154,7 @@ def post_employee(
             effective_year=int(eff_y),
             effective_month=int(eff_m),
         )
+    _save_total_leave(supabase, str(row["id"]), body.total_leave)
     return _employee_out(supabase, row)
 
 
@@ -218,10 +240,12 @@ def patch_employee(
             "hra_monthly": body.hra_monthly,
             "conveyance_monthly": body.conveyance_monthly,
             "special_allowance_monthly": body.special_allowance_monthly,
+            "joining_date": body.joining_date.isoformat() if body.joining_date else None,
         },
         supabase=supabase,
     )
     if not row.get("id"):
         raise HTTPException(status_code=404, detail="Employee not found")
+    _save_total_leave(supabase, employee_id, body.total_leave)
     return _employee_out(supabase, row)
 

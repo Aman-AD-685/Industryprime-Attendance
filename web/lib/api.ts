@@ -56,7 +56,13 @@ async function fetchWithAuthRetry(
   let res = await fetchWithTimeout(url, { ...init, headers }, timeoutMs);
 
   if (res.status === 401 && token) {
-    const user = await refreshAccessToken();
+    let user: Awaited<ReturnType<typeof refreshAccessToken>> = null;
+    try {
+      user = await refreshAccessToken();
+    } catch {
+      // Backend unreachable while refreshing: keep the session; the caller sees this request's error.
+      return res;
+    }
     if (user) {
       const nextToken = getStoredToken();
       const retryHeaders = new Headers(init?.headers);

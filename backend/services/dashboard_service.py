@@ -138,33 +138,44 @@ def get_attendance_trend(
     end = date.today()
     start = end - timedelta(days=days - 1)
 
-    try:
-        total_employees = supabase.count_rows(table="employees")
-    except Exception:
-        employees_data = supabase.select(table="employees", select="id", limit=5000)
-        total_employees = len(employees_data or [])
+    def _total_employees() -> int:
+        try:
+            return supabase.count_rows(table="employees")
+        except Exception:
+            employees_data = supabase.select(table="employees", select="id", limit=5000)
+            return len(employees_data or [])
 
-    try:
-        attendance_rows = supabase.select(
-            table="attendance",
-            select="employee_id,date,late_minutes",
-            where_gte={"date": str(start)},
-            where_lte={"date": str(end)},
-            limit=None,
-        )
-    except RuntimeError:
-        attendance_rows = []
+    def _attendance_rows() -> List[Dict[str, Any]]:
+        try:
+            return supabase.select(
+                table="attendance",
+                select="employee_id,date,late_minutes",
+                where_gte={"date": str(start)},
+                where_lte={"date": str(end)},
+                limit=None,
+            )
+        except RuntimeError:
+            return []
 
-    try:
-        link_rows = supabase.select(
-            table="attendance_link_entries",
-            select="user_id,date",
-            where_gte={"date": str(start)},
-            where_lte={"date": str(end)},
-            limit=5000,
-        )
-    except RuntimeError:
-        link_rows = []
+    def _link_rows() -> List[Dict[str, Any]]:
+        try:
+            return supabase.select(
+                table="attendance_link_entries",
+                select="user_id,date",
+                where_gte={"date": str(start)},
+                where_lte={"date": str(end)},
+                limit=5000,
+            )
+        except RuntimeError:
+            return []
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        fut_total = pool.submit(_total_employees)
+        fut_att = pool.submit(_attendance_rows)
+        fut_links = pool.submit(_link_rows)
+        total_employees = fut_total.result()
+        attendance_rows = fut_att.result()
+        link_rows = fut_links.result()
 
     out: List[Dict[str, Any]] = []
     d = start
@@ -186,34 +197,35 @@ def get_department_present_today(
     d = for_date or date.today()
     ds = str(d)
 
-    try:
-        attendance_data = supabase.select(
-            table="attendance",
-            select="employee_id",
-            where_eq={"date": ds},
-            limit=None,
-        )
-    except RuntimeError:
-        attendance_data = []
+    def _attendance_today() -> List[Dict[str, Any]]:
+        try:
+            return supabase.select(table="attendance", select="employee_id", where_eq={"date": ds}, limit=None)
+        except RuntimeError:
+            return []
+
+    def _links_today() -> List[Dict[str, Any]]:
+        try:
+            return supabase.select(
+                table="attendance_link_entries", select="user_id", where_eq={"date": ds}, limit=500
+            ) or []
+        except RuntimeError:
+            return []
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_att = pool.submit(_attendance_today)
+        fut_links = pool.submit(_links_today)
+        attendance_data = fut_att.result()
+        link_rows = fut_links.result()
 
     present_ids: Set[str] = set()
     for r in attendance_data:
         eid = r.get("employee_id")
         if eid:
             present_ids.add(str(eid))
-    try:
-        link_rows = supabase.select(
-            table="attendance_link_entries",
-            select="user_id",
-            where_eq={"date": ds},
-            limit=500,
-        )
-        for r in link_rows or []:
-            uid = r.get("user_id")
-            if uid:
-                present_ids.add(str(uid))
-    except RuntimeError:
-        pass
+    for r in link_rows:
+        uid = r.get("user_id")
+        if uid:
+            present_ids.add(str(uid))
 
     if not present_ids:
         return []

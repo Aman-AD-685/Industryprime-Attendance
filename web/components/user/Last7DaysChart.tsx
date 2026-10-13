@@ -14,7 +14,7 @@ const colors: Record<MeDayBar["status"], string> = {
 
 export function Last7DaysChart({ days, loading }: { days: MeDayBar[] | null; loading: boolean }) {
   if (loading || !days) {
-    return <div className="h-64 animate-pulse rounded-2xl bg-[#E5EAE8]/80" />;
+    return <div className="h-64 animate-pulse rounded-2xl bg-zinc-200/80" />;
   }
 
   const data = days.map((d) => ({
@@ -23,10 +23,10 @@ export function Last7DaysChart({ days, loading }: { days: MeDayBar[] | null; loa
   }));
 
   return (
-    <div className="rounded-2xl border border-[#E5EAE8] bg-white p-6 shadow-sm">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-[#0F1F1B]">Last 7 days</h2>
-        <Link href="/dashboard/user/attendance" className="text-xs font-semibold text-[#10B981] hover:underline">
+        <h2 className="text-sm font-semibold text-zinc-900">Last 7 days</h2>
+        <Link href="/dashboard/user/attendance" className="text-xs font-semibold text-emerald-500 hover:underline">
           View all →
         </Link>
       </div>
@@ -42,9 +42,9 @@ export function Last7DaysChart({ days, loading }: { days: MeDayBar[] | null; loa
                   if (!active || !payload?.[0]) return null;
                   const pl = payload[0].payload as MeDayBar;
                   return (
-                    <div className="rounded-lg border border-[#E5EAE8] bg-white px-3 py-2 text-xs text-[#0F1F1B] shadow">
+                    <div className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 shadow">
                       <p className="font-semibold">{pl.label}</p>
-                      <p className="text-[#7A8784]">Total {pl.hours.toFixed(1)}h</p>
+                      <p className="text-zinc-500">Total {pl.hours.toFixed(1)}h</p>
                       <p>
                         In {pl.checkIn ?? "—"} · Out {pl.checkOut ?? "—"}
                       </p>
@@ -67,7 +67,7 @@ export function Last7DaysChart({ days, loading }: { days: MeDayBar[] | null; loa
           </ResponsiveContainer>
         </div>
       </div>
-      <p className="mt-2 text-[11px] text-[#7A8784]">Green on-time · amber late · gray off/weekend · dashed outline = today.</p>
+      <p className="mt-2 text-[11px] text-zinc-500">Green on-time · amber late · gray off/weekend · dashed outline = today.</p>
     </div>
   );
 }

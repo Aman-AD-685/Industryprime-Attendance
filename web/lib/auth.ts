@@ -390,7 +390,12 @@ export function clearAuth(): void {
 
 let refreshInFlight: Promise<AuthUser | null> | null = null;
 
-/** FMS-style: refresh access token using refresh_token; returns user or null on failure. */
+/**
+ * FMS-style: refresh access token using refresh_token.
+ * Returns the user, or null when the backend rejected the refresh token (session really ended).
+ * Throws when the backend could not be reached (timeout / 502-504 / cold start): the session
+ * is still valid, so callers must keep it instead of logging the user out.
+ */
 export async function refreshAccessToken(): Promise<AuthUser | null> {
   const refreshToken = getStoredRefreshToken();
   if (!refreshToken) return null;
@@ -405,7 +410,8 @@ export async function refreshAccessToken(): Promise<AuthUser | null> {
       if (!data?.access_token || !data?.user) return null;
       await storeAuth(data.access_token, data.user, data.refresh_token ?? refreshToken);
       return data.user;
-    } catch {
+    } catch (err) {
+      if (isRetryableAuthError(err)) throw err;
       return null;
     } finally {
       refreshInFlight = null;
@@ -423,13 +429,15 @@ export function setupAuthSessionMaintenance(): () => void {
 
   const tick = () => {
     if (!getStoredRefreshToken() && !getStoredToken()) return;
-    void refreshAccessToken().then((user) => {
-      if (user) return;
-      if (!getStoredToken()) return;
-      void revalidateSessionUser().then((fresh) => {
-        if (!fresh && !getStoredRefreshToken()) clearAuth();
-      });
-    });
+    void refreshAccessToken()
+      .then((user) => {
+        if (user) return;
+        if (!getStoredToken()) return;
+        void revalidateSessionUser().then((fresh) => {
+          if (!fresh && !getStoredRefreshToken()) clearAuth();
+        });
+      })
+      .catch(() => undefined); // backend unreachable: keep the session, try again next tick
   };
 
   refreshTimer = window.setInterval(tick, SESSION_REFRESH_INTERVAL_MS);
@@ -590,19 +598,25 @@ export async function getCurrentUser(options?: { force?: boolean }): Promise<Aut
   return data.user;
 }
 
-/** Use cached user when possible; revalidate /auth/me in background. */
+/**
+ * Use cached user when possible; revalidate /auth/me in background.
+ * Null only when the session is really invalid. When the backend is unreachable
+ * (cold start, timeout, 5xx) the cached user is returned so the app does not log out.
+ */
 export async function revalidateSessionUser(): Promise<AuthUser | null> {
-  if (!getStoredToken()) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) return refreshed;
-    return null;
-  }
+  const cached = getStoredUser();
   try {
-    return await getCurrentUser({ force: true });
+    if (!getStoredToken()) {
+      return await refreshAccessToken();
+    }
+    try {
+      return await getCurrentUser({ force: true });
+    } catch (err) {
+      if (isRetryableAuthError(err)) return cached;
+      return await refreshAccessToken();
+    }
   } catch {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) return refreshed;
-    return null;
+    return cached;
   }
 }
 

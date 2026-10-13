@@ -25,7 +25,7 @@ const DashboardLateArrivalsTable = dynamic(
     })),
   {
     loading: () => (
-      <div className="rounded-2xl border border-[#E5EAE8] bg-white p-6 shadow-sm lg:col-span-7">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm lg:col-span-7">
         <Skeleton className="h-4 w-40" />
         <Skeleton className="mt-6 h-48 w-full" />
       </div>
@@ -57,7 +57,7 @@ export default function DashboardPage() {
   const showAddAttendanceInCopy = canShowAddAttendanceHeader(displayUser?.email);
   if (!displayUser) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center text-sm text-[#7A8784]">
+      <div className="flex min-h-[40vh] items-center justify-center text-sm text-zinc-500">
         Loading your workspace…
       </div>
     );
@@ -68,7 +68,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] w-full min-w-0 overflow-x-hidden bg-[#F7FAF9] pb-36 text-[#0F1F1B] md:pb-28">
+    <div className="flex min-h-[calc(100vh-4rem)] w-full min-w-0 overflow-x-hidden bg-zinc-50 pb-36 text-zinc-900 md:pb-28">
       <AdminSidebar
         role={displayUser.role}
         pendingLeaveCount={pendingQ.data?.length ?? 0}
@@ -77,15 +77,15 @@ export default function DashboardPage() {
       />
 
       <div className="mx-auto min-w-0 w-full max-w-[1600px] flex-1 space-y-6 px-3 py-4 sm:px-6 lg:px-8 xl:px-10">
-        <section className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-[#E5EAE8] bg-white p-4 shadow-sm sm:p-6">
+        <section className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(16,185,129,0.12),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(6,182,212,0.1),transparent_40%)]" />
           <div className="relative flex min-w-0 flex-col justify-between gap-6 lg:flex-row lg:items-center">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Secure workspace</p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-[#0F1F1B] dark:text-zinc-50">
+              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
                 IndustryPrime-Attendance Dashboard
               </h1>
-              <p className="mt-2 max-w-2xl text-sm text-[#7A8784] dark:text-zinc-400">
+              <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
                 Welcome {displayUser.name || "team member"}. Your role controls which modules and actions are available.
                 {showAddAttendanceInCopy ? (
                   <>

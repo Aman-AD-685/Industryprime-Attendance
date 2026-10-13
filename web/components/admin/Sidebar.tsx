@@ -58,7 +58,7 @@ function NavLinks({
         const Icon = item.icon;
         const badge =
           item.badgeKey === "leave" && pendingLeaveCount > 0 ? (
-            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#E04F4F] px-1.5 text-[11px] font-bold text-white">
+            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white">
               {pendingLeaveCount > 99 ? "99+" : pendingLeaveCount}
             </span>
           ) : null;
@@ -71,7 +71,7 @@ function NavLinks({
               "flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2",
               active
                 ? "bg-emerald-50 font-semibold text-emerald-800 shadow-sm ring-1 ring-emerald-100"
-                : "font-medium text-[#5C6B68] hover:bg-[#F7FAF9]",
+                : "font-medium text-zinc-600 hover:bg-zinc-50",
             )}
             aria-current={active ? "page" : undefined}
           >
@@ -92,10 +92,10 @@ function AdminSheetMainMenu({ onClose }: { onClose: () => void }) {
   const nav = useDashboardAdminNav();
   if (!nav) return null;
   return (
-    <div className="shrink-0 border-t border-[#E5EAE8] bg-[#F7FAF9] p-3">
+    <div className="shrink-0 border-t border-zinc-200 bg-zinc-50 p-3">
       <button
         type="button"
-        className="w-full rounded-xl border border-[#E5EAE8] bg-white px-3 py-2.5 text-sm font-semibold text-[#0F1F1B] shadow-sm transition hover:border-[#10B981]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+        className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900 shadow-sm transition hover:border-emerald-500/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
         onClick={() => {
           onClose();
           nav.openMainAppMenu();
@@ -128,11 +128,11 @@ export function AdminSidebar({
         panelId="admin-dashboard-nav-sheet"
       >
         <div className="flex h-full min-h-0 flex-col">
-          <div className="flex h-14 shrink-0 items-center justify-between border-b border-[#E5EAE8] px-4">
-            <span className="text-sm font-semibold text-[#0F1F1B]">Menu</span>
+          <div className="flex h-14 shrink-0 items-center justify-between border-b border-zinc-200 px-4">
+            <span className="text-sm font-semibold text-zinc-900">Menu</span>
             <button
               type="button"
-              className="rounded-lg px-2 py-1 text-xs font-semibold text-[#10B981] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              className="rounded-lg px-2 py-1 text-xs font-semibold text-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
               onClick={() => onMobileOpenChange(false)}
             >
               Close

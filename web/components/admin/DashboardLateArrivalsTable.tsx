@@ -41,7 +41,7 @@ export function DashboardLateArrivalsTable() {
         header: ({ table }) => (
           <input
             type="checkbox"
-            className="h-4 w-4 rounded border-[#E5EAE8] accent-[#10B981] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="h-4 w-4 rounded border-zinc-200 accent-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             checked={table.getIsAllPageRowsSelected()}
             onChange={table.getToggleAllPageRowsSelectedHandler()}
             aria-label="Select all on page"
@@ -50,7 +50,7 @@ export function DashboardLateArrivalsTable() {
         cell: ({ row }) => (
           <input
             type="checkbox"
-            className="h-4 w-4 rounded border-[#E5EAE8] accent-[#10B981] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="h-4 w-4 rounded border-zinc-200 accent-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             checked={row.getIsSelected()}
             onChange={row.getToggleSelectedHandler()}
             aria-label={`Select ${row.original.name}`}
@@ -66,8 +66,8 @@ export function DashboardLateArrivalsTable() {
           <div className="flex items-center gap-2">
             <Avatar className={row.original.avatarColor}>{initials(row.original.name)}</Avatar>
             <div>
-              <div className="font-semibold text-[#0F1F1B]">{row.original.name}</div>
-              <div className="text-[10px] font-bold uppercase tracking-wide text-[#7A8784]">{row.original.empId}</div>
+              <div className="font-semibold text-zinc-900">{row.original.name}</div>
+              <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">{row.original.empId}</div>
             </div>
           </div>
         ),
@@ -111,7 +111,7 @@ export function DashboardLateArrivalsTable() {
           </button>
         ),
         cell: ({ getValue }) => (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[#FEF3C7] px-2 py-0.5 text-xs font-semibold text-[#92400E]">
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
             <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
             {formatLateMinutes(Number(getValue()))}
           </span>
@@ -162,9 +162,9 @@ export function DashboardLateArrivalsTable() {
         <CardHeader>
           <CardTitle>Late arrivals · today</CardTitle>
         </CardHeader>
-        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-sm text-[#7A8784]">
-          <CheckCircle2 className="h-12 w-12 text-[#10B981]" aria-hidden />
-          <p className="font-semibold text-[#0F1F1B]">Everyone&apos;s on time today</p>
+        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-sm text-zinc-500">
+          <CheckCircle2 className="h-12 w-12 text-emerald-500" aria-hidden />
+          <p className="font-semibold text-zinc-900">Everyone&apos;s on time today</p>
         </div>
       </Card>
     );
@@ -206,9 +206,9 @@ export function DashboardLateArrivalsTable() {
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
-            <tr className="bg-[#F7FAF9] text-left text-[10px] font-bold uppercase tracking-wide text-[#7A8784]">
+            <tr className="bg-zinc-50 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-500">
               {headerGroup?.headers.map((h) => (
-                <th key={h.id} className="border-b border-[#E5EAE8] px-3 py-2">
+                <th key={h.id} className="border-b border-zinc-200 px-3 py-2">
                   {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
                 </th>
               ))}
@@ -217,13 +217,13 @@ export function DashboardLateArrivalsTable() {
           <tbody>
             {lateQ.isPending && lateQ.data === undefined ? (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-[#7A8784]">
+                <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">
                   Loading…
                 </td>
               </tr>
             ) : (
               table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="border-b border-[#E5EAE8]/80">
+                <tr key={row.id} className="border-b border-zinc-200/80">
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-3 py-2">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -236,7 +236,7 @@ export function DashboardLateArrivalsTable() {
         </table>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-[#7A8784]">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
         <span>
           Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
         </span>
@@ -262,21 +262,21 @@ export function DashboardLateArrivalsTable() {
 
       <div className="mt-4 space-y-3 md:hidden">
         {data.map((r) => (
-          <div key={r.id} className="rounded-xl border border-[#E5EAE8] bg-[#F7FAF9] p-3 text-sm">
+          <div key={r.id} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Avatar className={r.avatarColor}>{initials(r.name)}</Avatar>
                 <div>
-                  <p className="font-semibold text-[#0F1F1B]">{r.name}</p>
-                  <p className="text-xs text-[#7A8784]">{r.empId}</p>
+                  <p className="font-semibold text-zinc-900">{r.name}</p>
+                  <p className="text-xs text-zinc-500">{r.empId}</p>
                 </div>
               </div>
-              <span className="rounded-full bg-[#FEF3C7] px-2 py-0.5 text-xs font-semibold text-[#92400E]">
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
                 {formatLateMinutes(r.lateMinutes)}
               </span>
             </div>
-            <p className="mt-2 text-xs text-[#7A8784]">
-              {r.dept} · Check-in <span className="font-bold text-[#0F1F1B]">{r.checkIn}</span>
+            <p className="mt-2 text-xs text-zinc-500">
+              {r.dept} · Check-in <span className="font-bold text-zinc-900">{r.checkIn}</span>
             </p>
             <button
               type="button"

@@ -27,6 +27,9 @@ type Employee = {
   employment_status?: "current" | "left" | null;
   left_effective_month?: number | null;
   left_effective_year?: number | null;
+  joining_date?: string | null;
+  left_date?: string | null;
+  total_leave?: number | null;
 };
 
 type EmployeeForm = {
@@ -44,6 +47,8 @@ type EmployeeForm = {
   hra_monthly: string;
   conveyance_monthly: string;
   special_allowance_monthly: string;
+  total_leave: string;
+  joining_date: string;
 };
 
 const emptyForm: EmployeeForm = {
@@ -61,6 +66,8 @@ const emptyForm: EmployeeForm = {
   hra_monthly: "",
   conveyance_monthly: "",
   special_allowance_monthly: "",
+  total_leave: "",
+  joining_date: "",
 };
 
 function numToStr(v: number | null | undefined) {
@@ -97,7 +104,14 @@ function formFromEmployee(row: Employee): EmployeeForm {
     hra_monthly: numToStr(row.hra_monthly),
     conveyance_monthly: numToStr(row.conveyance_monthly),
     special_allowance_monthly: numToStr(row.special_allowance_monthly),
+    total_leave: numToStr(row.total_leave),
+    joining_date: (row.joining_date || "").slice(0, 10),
   };
+}
+
+function dateLabel(iso?: string | null) {
+  if (!iso) return "";
+  return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function salaryAmountChanged(original: Employee, form: EmployeeForm): boolean {
@@ -154,6 +168,8 @@ function toPayload(form: EmployeeForm, original?: Employee) {
     hra_monthly: strToNumNullable(form.hra_monthly),
     conveyance_monthly: strToNumNullable(form.conveyance_monthly),
     special_allowance_monthly: strToNumNullable(form.special_allowance_monthly),
+    total_leave: strToNumNullable(form.total_leave),
+    joining_date: form.joining_date || null,
   };
   if (original && salaryAmountChanged(original, form)) {
     payload.salary_effective_month = Number(form.salary_effective_month);
@@ -199,7 +215,7 @@ export default function EmployeesPage() {
       setEmployees((rows) => rows.map((item) => (item.id === updated.id ? updated : item)));
       setInfo(
         employment_status === "left"
-          ? `${updated.name || updated.employee_code} marked Left — hidden from Attendance/Payroll from next month.`
+          ? `${updated.name || updated.employee_code} marked Left — salary counts through ${dateLabel(updated.left_date) || "today"}; hidden from Attendance/Payroll from next month.`
           : `${updated.name || updated.employee_code} marked Current Emp.`
       );
     } catch (err) {
@@ -329,6 +345,8 @@ export default function EmployeesPage() {
             <Field label="Email"><FormInput type="email" value={form.email} placeholder="employee@company.com" onChange={(value) => setForm((state) => ({ ...state, email: value }))} /></Field>
             <Field label="Department"><FormInput value={form.department} placeholder="Operations" onChange={(value) => setForm((state) => ({ ...state, department: value }))} /></Field>
             <Field label="Monthly salary"><FormInput type="number" value={form.salary_monthly} placeholder="35000" onChange={(value) => setForm((state) => ({ ...state, salary_monthly: value }))} /></Field>
+            <Field label="CL + SL (days / year)"><FormInput type="number" min="0" value={form.total_leave} placeholder="23" onChange={(value) => setForm((state) => ({ ...state, total_leave: value }))} /></Field>
+            <Field label="Joining date"><FormInput type="date" value={form.joining_date} onChange={(value) => setForm((state) => ({ ...state, joining_date: value }))} /></Field>
             <Field label="Effective from (month)">
               <FormInput type="number" min="1" max="12" value={form.salary_effective_month} placeholder="7" onChange={(value) => setForm((state) => ({ ...state, salary_effective_month: value }))} />
             </Field>
@@ -363,7 +381,7 @@ export default function EmployeesPage() {
       {loading ? <LoadingCard /> : (
         <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white/70 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/40">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40"><tr>{["Code", "AT-Div-Code", "Employee", "Status", "Email", "Department", "Monthly salary", "Old salary", "Effective from", "Actions"].map((title) => <th key={title} className="px-4 py-3 font-semibold text-zinc-700 dark:text-zinc-200">{title}</th>)}</tr></thead>
+            <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40"><tr>{["Code", "AT-Div-Code", "Employee", "Status", "Joining date", "Email", "Department", "Monthly salary", "Old salary", "Effective from", "CL + SL", "Actions"].map((title) => <th key={title} className="px-4 py-3 font-semibold text-zinc-700 dark:text-zinc-200">{title}</th>)}</tr></thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {filtered.map((row) => {
                 const editing = editingId === row.id;
@@ -394,12 +412,13 @@ export default function EmployeesPage() {
                             {(row.employment_status || "current") === "left" ? "Left" : "Current Emp"}
                           </span>
                         )}
-                        {(row.employment_status || "current") === "left" && row.left_effective_month && row.left_effective_year ? (
+                        {(row.employment_status || "current") === "left" && (row.left_date || (row.left_effective_month && row.left_effective_year)) ? (
                           <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                            From {monthYearLabel(row.left_effective_month, row.left_effective_year)}
+                            From {dateLabel(row.left_date) || monthYearLabel(row.left_effective_month, row.left_effective_year)}
                           </div>
                         ) : null}
                       </td>
+                      <td className="px-4 py-3 align-top">{editing ? <input className={inputClass} type="date" value={editForm.joining_date} onChange={(e) => setEditForm((state) => ({ ...state, joining_date: e.target.value }))} /> : dateLabel(row.joining_date) || "—"}</td>
                       <td className="px-4 py-3 align-top">{editing ? <input className={inputClass} type="email" value={editForm.email} onChange={(e) => setEditForm((state) => ({ ...state, email: e.target.value }))} /> : row.email || "-"}</td>
                       <td className="px-4 py-3 align-top">{editing ? <input className={inputClass} value={editForm.department} onChange={(e) => setEditForm((state) => ({ ...state, department: e.target.value }))} /> : row.department || "-"}</td>
                       <td className="px-4 py-3 align-top">
@@ -418,11 +437,12 @@ export default function EmployeesPage() {
                       </td>
                       <td className="px-4 py-3 align-top">{editing ? "—" : formatOldSalary(row)}</td>
                       <td className="px-4 py-3 align-top">{editing ? "—" : monthYearLabel(row.salary_effective_month, row.salary_effective_year) || "—"}</td>
+                      <td className="px-4 py-3 align-top">{editing ? <input className={inputClass} type="number" min="0" value={editForm.total_leave} onChange={(e) => setEditForm((state) => ({ ...state, total_leave: e.target.value }))} /> : row.total_leave != null ? <span className="font-semibold">{row.total_leave}</span> : "—"}</td>
                       <td className="px-4 py-3 align-top">{canManageEmployees && editing ? <div className="flex gap-2"><button type="button" disabled={!isValidForm(editForm, editOriginal ?? row) || saving} onClick={() => void saveEmployee(row)} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60">Save</button><button type="button" onClick={() => { setEditingId(null); setEditOriginal(null); }} className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">Cancel</button></div> : canManageEmployees ? <button type="button" onClick={() => startEdit(row)} className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:border-emerald-300 hover:bg-emerald-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">Edit</button> : "-"}</td>
                     </tr>
                     {editing && canManageEmployees ? (
                       <tr className="bg-zinc-50/90 dark:bg-zinc-900/50">
-                        <td colSpan={10} className="px-4 py-4">
+                        <td colSpan={12} className="px-4 py-4">
                           {salaryChanged ? (
                             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
                               <div className="text-xs font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">Salary change — effective from</div>
@@ -462,7 +482,7 @@ export default function EmployeesPage() {
                   </Fragment>
                 );
               })}
-              {filtered.length === 0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-zinc-500 dark:text-zinc-400">No results</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={12} className="px-4 py-10 text-center text-zinc-500 dark:text-zinc-400">No results</td></tr>}
             </tbody>
           </table>
         </div>

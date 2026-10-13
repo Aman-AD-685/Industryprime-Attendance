@@ -41,13 +41,13 @@ export function DashboardPendingLeaves({
       <Card className="min-w-0 w-full lg:col-span-5">
         <div className="mb-4 flex items-center justify-between gap-2">
           <CardTitle className="mb-0">Pending leave approvals</CardTitle>
-          <Badge className="border-0 bg-[#E04F4F] px-2 py-0.5 text-xs font-bold text-white">0</Badge>
+          <Badge className="border-0 bg-rose-500 px-2 py-0.5 text-xs font-bold text-white">0</Badge>
         </div>
-        <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-[#7A8784]">
+        <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-zinc-500">
           <span className="text-3xl" aria-hidden>
             ✓
           </span>
-          <p className="font-semibold text-[#0F1F1B]">No pending approvals</p>
+          <p className="font-semibold text-zinc-900">No pending approvals</p>
         </div>
       </Card>
     );
@@ -57,27 +57,27 @@ export function DashboardPendingLeaves({
     <Card className="min-w-0 w-full lg:col-span-5">
       <div className="mb-4 flex items-center justify-between gap-2">
         <CardTitle className="mb-0">Pending leave approvals</CardTitle>
-        <Badge className="border-0 bg-[#E04F4F] px-2 py-0.5 text-xs font-bold text-white">
+        <Badge className="border-0 bg-rose-500 px-2 py-0.5 text-xs font-bold text-white">
           {q.data.length > 99 ? "99+" : q.data.length}
         </Badge>
       </div>
       <div className="flex max-h-[450px] flex-col gap-3 overflow-y-auto pr-1">
         {q.data.map((lv) => (
-          <div key={lv.id} className="rounded-xl bg-[#F7FAF9] p-4">
+          <div key={lv.id} className="rounded-xl bg-zinc-50 p-4">
             <div className="flex items-start gap-3">
               <Avatar className="bg-white shadow-sm">{initials(lv.name)}</Avatar>
               <div className="min-w-0 flex-1">
-                <p className="font-bold text-[#0F1F1B]">{lv.name}</p>
-                <p className="text-xs text-[#7A8784]">{lv.dept}</p>
-                <p className="mt-2 inline-flex flex-wrap items-center gap-1 text-xs text-[#7A8784]">
-                  <CalendarDays className="h-3.5 w-3.5 shrink-0 text-[#3B82F6]" aria-hidden />
-                  <span className="font-medium text-[#0F1F1B]">{typeLabel[lv.type]}</span>
+                <p className="font-bold text-zinc-900">{lv.name}</p>
+                <p className="text-xs text-zinc-500">{lv.dept}</p>
+                <p className="mt-2 inline-flex flex-wrap items-center gap-1 text-xs text-zinc-500">
+                  <CalendarDays className="h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
+                  <span className="font-medium text-zinc-900">{typeLabel[lv.type]}</span>
                   <span>· {fmtRange(lv.from, lv.to)}</span>
                   <span>
                     · {lv.days} {lv.days === 1 ? "day" : "days"}
                   </span>
                 </p>
-                <p className="mt-1 text-xs text-[#7A8784]">{lv.reason}</p>
+                <p className="mt-1 text-xs text-zinc-500">{lv.reason}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button
                     className="h-9 px-3 py-2 text-xs"

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useDashboardAdminNav } from "@/components/dashboard/DashboardAdminNavContext";
 import AddAttendanceHeaderLink from "./AddAttendanceHeaderLink";
-import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
 import UserMenu from "./UserMenu";
 import { getStoredUser } from "@/lib/auth";
@@ -43,13 +44,13 @@ export default function Header({ isSidebarOpen, onToggleSidebar }: HeaderProps) 
   const mergedAdminMenu = Boolean(dashNav?.isStaffDashboard && dashRole);
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-zinc-200/60 bg-white/85 backdrop-blur-md dark:border-zinc-800/60 dark:bg-zinc-950/90">
+    <header className="sticky top-0 z-50 w-full border-b border-zinc-200/70 bg-white/75 shadow-[0_1px_0_0_rgba(255,255,255,0.6)_inset] backdrop-blur-xl dark:border-zinc-800/70 dark:bg-zinc-950/75 dark:shadow-none">
       {/* Full-width bar; padding matches main content. md+: grid pins left / right clusters to column edges. */}
       <div className="mx-auto grid w-full min-w-0 grid-cols-1 gap-y-2 px-3 py-3 sm:px-6 md:h-16 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-x-4 md:gap-y-0 md:py-0 lg:px-8">
         <div className="flex min-w-0 w-full items-center gap-x-2 sm:gap-x-3">
           <button
             type="button"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white/80 text-zinc-800 shadow-sm backdrop-blur transition hover:bg-white dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-100"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200/80 bg-white/80 text-zinc-800 shadow-sm transition hover:border-zinc-300 hover:bg-white active:scale-95 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-100 dark:hover:bg-zinc-900"
             onClick={() => {
               if (mergedAdminMenu && dashNav) {
                 dashNav.toggleAdminNav();
@@ -72,12 +73,24 @@ export default function Header({ isSidebarOpen, onToggleSidebar }: HeaderProps) 
             <IconMenu className="h-5 w-5" />
           </button>
 
-          <div className="relative min-w-0 flex-1">
-            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400" />
+          <Link href="/" className="hidden shrink-0 items-center gap-2.5 md:flex" aria-label="Industryprime home">
+            <span className="inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-zinc-200/80 dark:bg-zinc-950 dark:ring-zinc-800">
+              <Image src="/industryprime-logo.png" alt="" width={36} height={36} className="h-full w-full object-contain" />
+            </span>
+            <span className="leading-tight">
+              <span className="block text-sm font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50">Industryprime</span>
+              <span className="block text-[11px] font-medium uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">
+                Attendance
+              </span>
+            </span>
+          </Link>
+
+          <div className="relative min-w-0 flex-1 md:max-w-xl md:pl-2">
+            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-zinc-400 md:left-5" />
             <input
               type="search"
               placeholder="Search employees, attendance, reports..."
-              className="w-full min-w-0 rounded-2xl border border-zinc-200 bg-white/70 py-2 pl-10 pr-3 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-500 focus:border-emerald-500/60 focus:ring-4 focus:ring-emerald-500/10 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              className="w-full min-w-0 rounded-full border border-transparent bg-zinc-100/90 py-2 pl-10 pr-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-500 hover:bg-zinc-100 focus:border-emerald-500/50 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 dark:bg-zinc-900/70 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:hover:bg-zinc-900 dark:focus:bg-zinc-900"
               aria-label="Search employees, attendance, and reports"
             />
           </div>
@@ -89,7 +102,6 @@ export default function Header({ isSidebarOpen, onToggleSidebar }: HeaderProps) 
               <AddAttendanceHeaderLink variant={showDashActions && dashRole ? "solid" : "default"} />
             </div>
           ) : null}
-          <NotificationBell />
           <ThemeToggle />
           <UserMenu />
         </div>

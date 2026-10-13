@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # `database/` -> `backend/` (always load backend/.env before reading env vars)
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -74,6 +76,39 @@ def _env(name: str) -> str:
     return val
 
 
+def _build_shared_session() -> requests.Session:
+    """
+    One keep-alive pool for the whole process. Every request used to open a fresh TLS
+    connection (~0.8-1.3 s each); reusing connections makes a query ~200 ms.
+    GETs retry once or twice on connection errors / 502-504 so a blip is not a 500.
+    """
+    session = requests.Session()
+    # read=2: Supabase drops idle keep-alive sockets; reusing one raises "Connection aborted /
+    # reset by peer", which urllib3 counts as a read error. GETs are idempotent, so retry on a
+    # fresh connection instead of answering 500.
+    retry = Retry(
+        total=3,
+        connect=2,
+        read=2,
+        status=2,
+        backoff_factor=0.3,
+        status_forcelist=(502, 503, 504),
+        allowed_methods=frozenset({"GET", "HEAD"}),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(pool_connections=4, pool_maxsize=32, max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    session.headers.update({"Connection": "keep-alive", "Accept-Encoding": "gzip, deflate"})
+    return session
+
+
+_SHARED_SESSION = _build_shared_session()
+
+# (connect, read) seconds — a stalled Supabase socket must not pin a worker thread forever.
+_DEFAULT_TIMEOUT = (5, 30)
+
+
 class SupabaseRest:
     def __init__(self, url: str, apikey: str, bearer_token: str):
         clean_url = url.strip().rstrip("/")
@@ -85,18 +120,18 @@ class SupabaseRest:
             "Authorization": f"Bearer {bearer_token}",
             "Content-Type": "application/json",
         }
-        self._session = requests.Session()
-        self._session.headers.update(
-            {
-                "Connection": "keep-alive",
-                "Accept-Encoding": "gzip, deflate",
-            }
-        )
+        self._session = _SHARED_SESSION
 
     def _request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
         headers = kwargs.pop("headers", None)
         merged = {**self.headers, **(headers or {})}
-        return self._session.request(method, url, headers=merged, **kwargs)
+        kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
+        try:
+            return self._session.request(method, url, headers=merged, **kwargs)
+        except requests.RequestException as exc:
+            # Same error type as a bad HTTP status, so every `except RuntimeError` fallback
+            # (dashboard tiles, holidays, snapshots...) degrades instead of returning 500.
+            raise RuntimeError(f"Supabase request failed: {exc}") from exc
 
     def _handle_response(self, resp: requests.Response) -> Any:
         try:
@@ -359,8 +394,8 @@ def get_supabase_service() -> SupabaseRest:
 
 def get_supabase_user(access_token: str) -> SupabaseRest:
     # Auth is handled by FastAPI now, so Supabase access happens server-side with
-    # service-role credentials after app-level JWT/role checks.
-    url = _env("SUPABASE_URL")
-    service_role_key = _env("SUPABASE_SERVICE_ROLE_KEY")
-    return SupabaseRest(url, apikey=service_role_key, bearer_token=service_role_key)
+    # service-role credentials after app-level JWT/role checks. Same client as the
+    # service one — no per-request object / connection churn.
+    _ = access_token
+    return get_supabase_service()
 

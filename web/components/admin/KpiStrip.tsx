@@ -33,7 +33,7 @@ export function KpiStrip() {
     {
       label: "Total employees",
       value: k.totalEmployees.toLocaleString(),
-      valueClass: "text-[#0F1F1B]",
+      valueClass: "text-zinc-900",
       sub: `▲ +${k.newJoinersThisMonth} this month`,
       subClass: "text-emerald-600",
       extra: null as ReactNode,
@@ -41,23 +41,23 @@ export function KpiStrip() {
     {
       label: "Present today",
       value: String(k.presentToday),
-      valueClass: "text-[#10B981]",
+      valueClass: "text-emerald-500",
       sub: `of ${k.totalEmployees} on roster`,
-      subClass: "text-[#7A8784]",
+      subClass: "text-zinc-500",
       extra: <Progress value={presentPct} className="mt-3 h-1.5" />,
     },
     {
       label: "Absent",
       value: String(absentTotal),
-      valueClass: "text-[#E04F4F]",
+      valueClass: "text-rose-500",
       sub: `${k.absentUnplanned} unplanned · ${k.absentOnLeave} on leave`,
-      subClass: "text-[#7A8784]",
+      subClass: "text-zinc-500",
       extra: null,
     },
     {
       label: "Late arrivals",
       value: String(k.late),
-      valueClass: "text-[#F59E0B]",
+      valueClass: "text-amber-500",
       sub:
         k.lateDeltaVsYesterday === 0
           ? "Same as yesterday"
@@ -65,15 +65,15 @@ export function KpiStrip() {
             ? `▲ +${k.lateDeltaVsYesterday} vs yesterday`
             : `▼ ${Math.abs(k.lateDeltaVsYesterday)} vs yesterday`,
       subClass:
-        k.lateDeltaVsYesterday > 0 ? "text-[#E04F4F]" : k.lateDeltaVsYesterday < 0 ? "text-emerald-600" : "text-[#7A8784]",
+        k.lateDeltaVsYesterday > 0 ? "text-rose-500" : k.lateDeltaVsYesterday < 0 ? "text-emerald-600" : "text-zinc-500",
       extra: null,
     },
     {
       label: "On approved leave",
       value: String(k.onApprovedLeave),
-      valueClass: "text-[#0F1F1B]",
+      valueClass: "text-zinc-900",
       sub: `${k.pendingLeaveRequests} pending requests`,
-      subClass: "text-[#7A8784]",
+      subClass: "text-zinc-500",
       extra: null,
     },
   ];
@@ -87,7 +87,7 @@ export function KpiStrip() {
     >
       {cards.map((c) => (
         <Card key={c.label} className="min-w-0 w-full">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[#7A8784]">{c.label}</p>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-500">{c.label}</p>
           <p className={cn("mt-2 text-3xl font-bold tabular-nums", c.valueClass)}>{c.value}</p>
           <p className={cn("mt-1 text-xs", c.subClass)}>{c.sub}</p>
           {c.extra}

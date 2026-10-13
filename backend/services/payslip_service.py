@@ -14,26 +14,34 @@ def _f(v: Any) -> Optional[float]:
         return None
 
 
+def _skipped_start_days(month: int, year: int, period_start: Optional[date]) -> int:
+    """Days before the first attendance upload in this month (e.g. start 6th → 5 unpaid days)."""
+    if period_start is None or (period_start.year, period_start.month) != (year, month):
+        return 0
+    return period_start.day - 1
+
+
 def _month_elapsed_factor(
     month: int,
     year: int,
     calendar_days: int,
     period_end: Optional[date],
+    period_start: Optional[date] = None,
 ) -> float:
     """
-    For the current (in-progress) month, earnings accrue only through ``period_end``.
-    Uses day-of-month / 30-day salary basis (e.g. June 18 → 18/30).
-    Completed months (period_end on or after month end) use factor 1.0.
+    Earnings accrue from ``period_start`` (first attendance upload; month start when None)
+    through ``period_end`` on a 30-day basis: June 18 → 18/30, joined 6th + June 18 → 13/30,
+    joined 6th + completed month → 25/30. Completed months with no start skip use 1.0.
     """
-    if period_end is None:
-        return 1.0
-    month_end = date(year, month, calendar.monthrange(year, month)[1])
-    if period_end >= month_end:
-        return 1.0
-    if period_end.year != year or period_end.month != month:
-        return 1.0
     denom = max(int(calendar_days or 0), 1)
-    return max(0.0, min(1.0, float(period_end.day) / float(denom)))
+    end_day = denom
+    if period_end is not None and (period_end.year, period_end.month) == (year, month):
+        month_end = date(year, month, calendar.monthrange(year, month)[1])
+        if period_end < month_end:
+            end_day = period_end.day
+    # ponytail: 30-day basis means a 31st start pays 0 days; refine if anyone ever joins on a 31st.
+    days = end_day - _skipped_start_days(month, year, period_start)
+    return max(0.0, min(1.0, float(days) / float(denom)))
 
 
 def compute_payslip(
@@ -51,9 +59,13 @@ def compute_payslip(
     leave_covered_days: float = 0.0,
     lop_days: float = 0.0,
     period_end: Optional[date] = None,
+    period_start: Optional[date] = None,
 ) -> Dict[str, Any]:
     """
     Build payslip numbers for one calendar month.
+
+    ``period_start`` is the first attendance upload date when it falls in this month; days
+    before it are not paid (no salary, no week-off / holiday credit).
 
     Earnings show full monthly Salary / HRA / Conveyance / Mobile when the month is
     complete. For an in-progress month (``period_end`` before month end), Salary / HRA /
@@ -73,7 +85,7 @@ def compute_payslip(
     cal_days = max(int(calendar_days or 0), 1)
     lop_days_f = max(0.0, float(lop_days or 0))
     paid_factor = max(0.0, (float(cal_days) - lop_days_f) / float(cal_days))
-    elapsed_factor = _month_elapsed_factor(month, year, cal_days, period_end)
+    elapsed_factor = _month_elapsed_factor(month, year, cal_days, period_end, period_start)
 
     monthly_full = max(float(monthly_salary or 0), 0.0)
     hra_m = _f(employee.get("hra_monthly"))
@@ -126,7 +138,9 @@ def compute_payslip(
     net_pay = round(gross_earned - total_ded, 2)
 
     working_days = int(present_days + absent_attendance_days)
-    paid_salary_days = round(max(0.0, float(cal_days) - lop_days_f), 2)
+    paid_salary_days = round(
+        max(0.0, float(cal_days) - _skipped_start_days(month, year, period_start) - lop_days_f), 2
+    )
 
     return {
         "month": month,

@@ -20,7 +20,7 @@ export default function LeaveApprovalsPage() {
 
   if (!user) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center text-sm text-[#7A8784]">
+      <div className="flex min-h-[40vh] items-center justify-center text-sm text-zinc-500">
         Loading…
       </div>
     );
@@ -28,9 +28,9 @@ export default function LeaveApprovalsPage() {
 
   if (!allowed) {
     return (
-      <div className="mx-auto max-w-lg rounded-2xl border border-[#E5EAE8] bg-white p-8 text-center shadow-sm">
-        <p className="text-sm font-semibold text-[#E04F4F]">No leave approval access</p>
-        <p className="mt-2 text-sm text-[#7A8784]">
+      <div className="mx-auto max-w-lg rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
+        <p className="text-sm font-semibold text-rose-500">No leave approval access</p>
+        <p className="mt-2 text-sm text-zinc-500">
           Ask a Master Admin to add your email under Settings → Email lists (Approval), or use the Approve link from
           your email.
         </p>
@@ -41,8 +41,8 @@ export default function LeaveApprovalsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-[#0F1F1B]">Pending leave approvals</h1>
-        <p className="mt-1 text-sm text-[#7A8784]">
+        <h1 className="text-2xl font-semibold text-zinc-900">Pending leave approvals</h1>
+        <p className="mt-1 text-sm text-zinc-500">
           You can approve requests here or from the secure link in your approval email.
         </p>
       </div>

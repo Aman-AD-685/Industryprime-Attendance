@@ -99,6 +99,11 @@ def payroll_payslip_pdf(
             if item.get("attendance_period_end")
             else None
         ),
+        period_start=(
+            date.fromisoformat(str(item["attendance_period_start"])[:10])
+            if item.get("attendance_period_start")
+            else None
+        ),
     )
     code = str(emp.get("employee_code") or "employee").replace(" ", "_")
     fname = f"payslip-{code}-{year}-{month:02d}.pdf"

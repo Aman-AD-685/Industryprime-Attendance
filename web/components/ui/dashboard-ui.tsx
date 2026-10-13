@@ -5,7 +5,7 @@ import { useEffect, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNo
 import { cn } from "@/lib/cn";
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("rounded-2xl border border-[#E5EAE8] bg-white p-6 shadow-sm", className)} {...props} />;
+  return <div className={cn("rounded-2xl border border-zinc-200/80 bg-white/90 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/60", className)} {...props} />;
 }
 
 export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
@@ -13,11 +13,11 @@ export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElemen
 }
 
 export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn("text-base font-semibold text-[#0F1F1B]", className)} {...props} />;
+  return <h3 className={cn("text-base font-semibold text-zinc-900 dark:text-zinc-50", className)} {...props} />;
 }
 
 export function CardDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn("text-xs text-[#7A8784]", className)} {...props} />;
+  return <p className={cn("text-xs text-zinc-500 dark:text-zinc-400", className)} {...props} />;
 }
 
 export function Button({
@@ -27,12 +27,12 @@ export function Button({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "default" | "outline" | "ghost" | "destructive" }) {
   const v =
     variant === "outline"
-      ? "border border-[#E5EAE8] bg-white text-[#0F1F1B] hover:bg-[#F7FAF9]"
+      ? "border border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
       : variant === "ghost"
-        ? "text-[#0F1F1B] hover:bg-[#F7FAF9]"
+        ? "text-zinc-900 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800"
         : variant === "destructive"
-          ? "bg-[#E04F4F] text-white hover:bg-red-600"
-          : "bg-[#10B981] text-white hover:bg-emerald-600";
+          ? "bg-rose-600 text-white hover:bg-rose-700"
+          : "bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800";
   return (
     <button
       type="button"
@@ -50,7 +50,7 @@ export function Badge({ className, ...props }: HTMLAttributes<HTMLSpanElement>) 
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border border-[#E5EAE8] bg-[#F7FAF9] px-2.5 py-0.5 text-xs font-semibold text-[#0F1F1B]",
+        "inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs font-semibold text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100",
         className,
       )}
       {...props}
@@ -61,8 +61,8 @@ export function Badge({ className, ...props }: HTMLAttributes<HTMLSpanElement>) 
 export function Progress({ value, className }: { value: number; className?: string }) {
   const v = Math.min(100, Math.max(0, value));
   return (
-    <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-[#E5EAE8]", className)} role="progressbar" aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100}>
-      <div className="h-full rounded-full bg-[#10B981] transition-[width] duration-300" style={{ width: `${v}%` }} />
+    <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800", className)} role="progressbar" aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100}>
+      <div className="h-full rounded-full bg-emerald-500 transition-[width] duration-300" style={{ width: `${v}%` }} />
     </div>
   );
 }
@@ -71,7 +71,7 @@ export function Avatar({ className, children }: { className?: string; children: 
   return (
     <div
       className={cn(
-        "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold text-[#0F1F1B]",
+        "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold text-zinc-900",
         className,
       )}
     >
@@ -81,11 +81,11 @@ export function Avatar({ className, children }: { className?: string; children: 
 }
 
 export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("animate-pulse rounded-md bg-[#E5EAE8]", className)} {...props} />;
+  return <div className={cn("animate-pulse rounded-md bg-zinc-200 dark:bg-zinc-800", className)} {...props} />;
 }
 
 export function Separator({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("h-px w-full bg-[#E5EAE8]", className)} role="separator" {...props} />;
+  return <div className={cn("h-px w-full bg-zinc-200 dark:bg-zinc-800", className)} role="separator" {...props} />;
 }
 
 export function Sheet({
@@ -125,8 +125,8 @@ export function Sheet({
       <div
         id={panelId}
         className={cn(
-          "absolute top-0 flex h-full max-h-screen min-h-0 w-[min(100%,280px)] flex-col bg-white shadow-xl",
-          side === "left" ? "left-0 border-r border-[#E5EAE8]" : "right-0 border-l border-[#E5EAE8]",
+          "absolute top-0 flex h-full max-h-screen min-h-0 w-[min(100%,280px)] flex-col bg-white shadow-xl dark:bg-zinc-950",
+          side === "left" ? "left-0 border-r border-zinc-200" : "right-0 border-l border-zinc-200",
         )}
       >
         {children}
@@ -152,7 +152,7 @@ export function Tabs({
 }
 
 export function TabsList({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("inline-flex flex-wrap gap-2 rounded-xl bg-[#F7FAF9] p-1", className)} {...props} />;
+  return <div className={cn("inline-flex flex-wrap gap-1 rounded-xl border border-zinc-200/80 bg-zinc-100/80 p-1 dark:border-zinc-800 dark:bg-zinc-900", className)} {...props} />;
 }
 
 export function TabsTrigger({
@@ -171,7 +171,7 @@ export function TabsTrigger({
       onClick={onClick}
       className={cn(
         "rounded-lg px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2",
-        active ? "bg-[#10B981] text-white shadow-sm" : "text-[#0F1F1B] hover:bg-white/80",
+        active ? "bg-white text-emerald-700 shadow-sm ring-1 ring-zinc-200/80 dark:bg-zinc-800 dark:text-emerald-300 dark:ring-zinc-700" : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100",
         className,
       )}
       {...props}

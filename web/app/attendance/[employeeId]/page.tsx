@@ -56,6 +56,20 @@ const WEEKEND_AUTO_PRESENT_EMAILS = new Set(["adrija@industryprime.com"]);
 
 /** Minutes from midnight; IN at or before this time is not late (same as backend). */
 const LATE_CUTOFF_MINUTES = 9 * 60 + 31;
+// From Oct 2026: IN 11:02–13:30 = Half Day (0.5 CL), IN after 13:30 = Full Day CL (mirrors backend).
+const LATE_CL_DEDUCTION_START = "2026-10-01";
+const HALF_DAY_AFTER_MINUTES = 11 * 60 + 1;
+const FULL_DAY_AFTER_MINUTES = 13 * 60 + 30;
+const LATE_LABELS = new Set(["Late", "Half Day", "Full Day CL"]);
+
+function lateStatusLabel(dateKey: string, inMinutes: number, onTimeLabel: string): string {
+  const isSunday = new Date(`${dateKey}T00:00:00`).getDay() === 0;
+  if (dateKey >= LATE_CL_DEDUCTION_START && !isSunday) {
+    if (inMinutes > FULL_DAY_AFTER_MINUTES) return "Full Day CL";
+    if (inMinutes > HALF_DAY_AFTER_MINUTES) return "Half Day";
+  }
+  return inMinutes > LATE_CUTOFF_MINUTES ? "Late" : onTimeLabel;
+}
 
 function hhmmToMinutes(value: unknown): number {
   if (value == null) return 0;
@@ -182,7 +196,7 @@ function calculateLocal(
       late_time_display: minutesToHHMM(lateMinutes),
       time_value: 0,
       status: "P",
-      status_ot_sf: late > 0 ? "Late" : "OK",
+      status_ot_sf: lateStatusLabel(dateKey, inMinutes, "OK"),
     };
   }
 
@@ -236,7 +250,7 @@ function calculateLocal(
     late_time_display: lateDisplay,
     time_value: actual,
     status: "P",
-    status_ot_sf: late > 0 ? "Late" : baseStatus,
+    status_ot_sf: lateStatusLabel(dateKey, inMinutes, baseStatus),
   };
 }
 
@@ -582,7 +596,7 @@ export default function AttendanceDetailPage() {
                       if (row.status === "A") {
                         return "bg-red-50 text-red-950 dark:bg-red-950/30 dark:text-red-100";
                       }
-                      if (row.status_ot_sf === "Late") {
+                      if (LATE_LABELS.has(row.status_ot_sf)) {
                         return "bg-amber-50/90 text-amber-950 dark:bg-amber-950/25 dark:text-amber-100";
                       }
                       if (

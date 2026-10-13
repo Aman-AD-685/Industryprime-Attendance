@@ -13,7 +13,6 @@ import {
   IconClipboardList,
   IconGrid,
   IconSettings,
-  IconSparkles,
   IconUsers,
   IconWallet,
   IconX,
@@ -168,14 +167,15 @@ export default function Sidebar({ isOpen, onClose, onDismiss }: SidebarProps) {
       aria-hidden={!isOpen}
       inert={!isOpen ? true : undefined}
       className={cn(
-        "flex h-[100dvh] w-[min(18rem,92vw)] max-w-[20rem] flex-col border-r border-zinc-200/80 bg-[var(--background)] shadow-2xl dark:border-zinc-800/80",
-        "fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-out motion-reduce:transition-none",
+        "flex h-[100dvh] w-[min(15rem,88vw)] max-w-[16rem] flex-col border-r border-white/5 bg-zinc-950 text-zinc-200 shadow-2xl",
+        "bg-[radial-gradient(40rem_20rem_at_-20%_-10%,rgb(20_163_111/0.28),transparent_60%)]",
+        "fixed inset-y-0 left-0 z-[60] transition-transform duration-300 ease-out motion-reduce:transition-none",
         isOpen ? "translate-x-0" : "-translate-x-full pointer-events-none",
       )}
     >
-      <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-zinc-200/60 px-4 dark:border-zinc-800/60">
+      <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/10 px-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white shadow-md ring-1 ring-white/20">
             <Image
               src="/industryprime-logo.png"
               alt="Industryprime"
@@ -185,17 +185,17 @@ export default function Sidebar({ isOpen, onClose, onDismiss }: SidebarProps) {
             />
           </span>
           <div id={DRAWER_TITLE_ID} className="min-w-0 leading-tight">
-            <div className="truncate text-sm font-extrabold tracking-tight text-zinc-900 dark:text-zinc-100">
-              Industryprime
+            <div className="truncate text-sm font-extrabold tracking-tight text-white">Industryprime</div>
+            <div className="truncate text-[11px] font-medium uppercase tracking-[0.14em] text-emerald-300/90">
+              Attendance
             </div>
-            <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">Attendance</div>
           </div>
         </div>
 
         <button
           ref={closeBtnRef}
           type="button"
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white/80 text-zinc-700 shadow-sm backdrop-blur transition hover:bg-white dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-200"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition hover:bg-white/10 hover:text-white"
           onClick={onDismiss}
           aria-label="Close navigation menu"
         >
@@ -203,7 +203,8 @@ export default function Sidebar({ isOpen, onClose, onDismiss }: SidebarProps) {
         </button>
       </div>
 
-      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-2 pb-2" aria-label="Main pages">
+      <div className="px-5 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Menu</div>
+      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-1 pb-2" aria-label="Main pages">
         {navItems.map((item) => {
           const isAttendanceSheet =
             pathname === "/attendance" ||
@@ -229,17 +230,17 @@ export default function Sidebar({ isOpen, onClose, onDismiss }: SidebarProps) {
                 onClose();
               }}
               className={cn(
-                "group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 transition",
+                "group relative flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm transition",
                 active
-                  ? "bg-emerald-600 text-white shadow"
-                  : "text-zinc-700 hover:bg-white/70 dark:text-zinc-200 dark:hover:bg-zinc-900/60",
+                  ? "bg-emerald-500/15 text-white ring-1 ring-emerald-400/25"
+                  : "text-zinc-400 hover:bg-white/[0.06] hover:text-white",
               )}
               aria-current={active ? "page" : undefined}
             >
               <Icon
                 className={cn(
-                  "h-5 w-5 flex-none",
-                  active ? "text-white" : "text-zinc-500 group-hover:text-zinc-700 dark:text-zinc-400",
+                  "h-5 w-5 flex-none transition",
+                  active ? "text-emerald-300" : "text-zinc-500 group-hover:text-emerald-300",
                 )}
               />
 
@@ -247,7 +248,7 @@ export default function Sidebar({ isOpen, onClose, onDismiss }: SidebarProps) {
 
               {active && (
                 <span
-                  className="absolute left-0 top-2 h-8 w-1 rounded-tr-lg rounded-br-lg bg-white/30"
+                  className="absolute left-0 top-2.5 h-6 w-1 rounded-r-full bg-emerald-400 shadow-[0_0_12px_rgb(57_189_138/0.8)]"
                   aria-hidden="true"
                 />
               )}
@@ -256,15 +257,6 @@ export default function Sidebar({ isOpen, onClose, onDismiss }: SidebarProps) {
         })}
       </nav>
 
-      <div className="shrink-0 px-2 pb-3">
-        <div className="rounded-2xl border border-zinc-200 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/40">
-          <div className="text-xs text-zinc-500 dark:text-zinc-400">Premium mode</div>
-          <div className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            Smart attendance insights
-          </div>
-          <IconSparkles className="mt-2 h-5 w-5 text-emerald-600" aria-hidden />
-        </div>
-      </div>
     </aside>
   );
 }

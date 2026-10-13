@@ -32,19 +32,19 @@ export function WelcomeBanner({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border border-[#E5EAE8] bg-gradient-to-r from-emerald-50 to-sky-50 p-6 shadow-sm ${
+      className={`relative overflow-hidden rounded-2xl border border-zinc-200 bg-gradient-to-r from-emerald-50 to-sky-50 p-6 shadow-sm ${
         reducedMotion ? "" : "motion-safe:transition"
       }`}
     >
       <div className="flex min-w-0 flex-col gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#7A8784]">Secure workspace</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#0F1F1B]">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Secure workspace</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900">
             Good {greeting()}, {firstName}
           </h1>
-          <p className="mt-2 max-w-xl text-sm text-[#7A8784]">{sub}</p>
-          <p className="mt-3 text-xs text-[#0F1F1B]/80">{shiftLine}</p>
-          <p className="mt-2 text-xs font-medium text-[#7A8784]">{format(new Date(), "EEEE · MMM d, yyyy")}</p>
+          <p className="mt-2 max-w-xl text-sm text-zinc-500">{sub}</p>
+          <p className="mt-3 text-xs text-zinc-900/80">{shiftLine}</p>
+          <p className="mt-2 text-xs font-medium text-zinc-500">{format(new Date(), "EEEE · MMM d, yyyy")}</p>
         </div>
       </div>
     </div>

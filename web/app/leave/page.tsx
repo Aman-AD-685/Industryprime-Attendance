@@ -32,12 +32,22 @@ type LeaveSummary = {
   month: number;
   total_leave: number;
   total_used_leave: number;
+  /** Absent (Atten. = A) days in the month. */
+  absent_days?: number;
+  /** Late-arrival CL: Half Day 0.5 / Full Day CL 1.0 (from Oct 2026). */
+  late_cl_days?: number;
   balance_leave: number;
   lop_days?: number;
   leave_exhausted?: boolean;
   attendance_period_end?: string | null;
   requests: LeaveRequest[];
 };
+
+/** "1 absent + 1 late CL" when both parts are known, else "". */
+function usedBreakdown(row: Pick<LeaveSummary, "absent_days" | "late_cl_days">): string {
+  if (row.absent_days == null || row.late_cl_days == null) return "";
+  return `${row.absent_days} absent + ${row.late_cl_days} late CL`;
+}
 
 type LeaveForm = {
   leave_type: string;
@@ -313,7 +323,7 @@ export default function LeavePage() {
         <div>
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Leave Management</h2>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-            Total Used is Attendance Atten. = A for the selected month. From May: Balance Leave = Total Leave − Used; each later month subtracts that month&apos;s Used from the previous balance.
+            Total Used is Attendance Atten. = A for the selected month, plus late arrivals from Oct 2026: IN 11:02–1:30 PM = Half Day (0.5), IN after 1:30 PM = 1 full day (IN 9:32–11:01 AM is Late only, no deduction). From May: Balance Leave = Total Leave − Used; each later month subtracts that month&apos;s Used from the previous balance.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
@@ -439,7 +449,7 @@ export default function LeavePage() {
               <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{row.employee.email || "-"}</div>
               <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
                 <Metric label="Total Leave" value={row.total_leave} />
-                <Metric label="Total Used (month)" value={row.total_used_leave} />
+                <Metric label="Total Used (month)" value={row.total_used_leave} hint={usedBreakdown(row)} />
                 <Metric
                   label="Balance Leave"
                   value={displayBalanceLeave(row)}
@@ -479,7 +489,7 @@ export default function LeavePage() {
 
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             <Detail label="Total Leave" value={selected.total_leave} />
-            <Detail label="Total Used (month)" value={selected.total_used_leave} />
+            <Detail label="Total Used (month)" value={selected.total_used_leave} hint={usedBreakdown(selected)} />
             <Detail
               label="Balance Leave"
               value={displayBalanceLeave(selected)}
@@ -628,7 +638,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Metric({ label, value, strong = false, warn = false }: { label: string; value: React.ReactNode; strong?: boolean; warn?: boolean }) {
+function Metric({ label, value, hint, strong = false, warn = false }: { label: string; value: React.ReactNode; hint?: string; strong?: boolean; warn?: boolean }) {
   const valueClass =
     strong && warn
       ? "font-bold text-amber-800 dark:text-amber-200"
@@ -639,11 +649,12 @@ function Metric({ label, value, strong = false, warn = false }: { label: string;
     <div>
       <div className="text-xs text-zinc-500 dark:text-zinc-400">{label}</div>
       <div className={`mt-1 text-sm whitespace-nowrap ${valueClass}`}>{value}</div>
+      {hint ? <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{hint}</div> : null}
     </div>
   );
 }
 
-function Detail({ label, value, highlight = false, warn = false }: { label: string; value: React.ReactNode; highlight?: boolean; warn?: boolean }) {
+function Detail({ label, value, hint, highlight = false, warn = false }: { label: string; value: React.ReactNode; hint?: string; highlight?: boolean; warn?: boolean }) {
   const box =
     highlight && warn
       ? "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-600/40 dark:bg-amber-500/15 dark:text-amber-100"
@@ -654,6 +665,7 @@ function Detail({ label, value, highlight = false, warn = false }: { label: stri
     <div className={`rounded-2xl border p-4 ${box}`}>
       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{label}</div>
       <div className="mt-2 text-lg font-bold">{value}</div>
+      {hint ? <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{hint}</div> : null}
     </div>
   );
 }

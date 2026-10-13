@@ -19,17 +19,17 @@ export default function DashboardRolesPage() {
 
   if (!user || !can.manageRoles(user.role)) {
     return (
-      <div className="flex min-h-[30vh] items-center justify-center text-sm text-[#7A8784]">
+      <div className="flex min-h-[30vh] items-center justify-center text-sm text-zinc-500">
         Checking access…
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-4 rounded-2xl border border-[#E5EAE8] bg-white p-6 shadow-sm">
-      <h1 className="text-lg font-semibold text-[#0F1F1B]">User &amp; role control</h1>
-      <p className="text-sm text-[#7A8784]">Master Admins manage roles on the Users page.</p>
-      <Link href="/users" className="text-sm font-semibold text-[#10B981] underline">
+    <div className="mx-auto max-w-lg space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <h1 className="text-lg font-semibold text-zinc-900">User &amp; role control</h1>
+      <p className="text-sm text-zinc-500">Master Admins manage roles on the Users page.</p>
+      <Link href="/users" className="text-sm font-semibold text-emerald-500 underline">
         Open Users
       </Link>
     </div>

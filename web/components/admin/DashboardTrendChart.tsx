@@ -56,7 +56,7 @@ export function DashboardTrendChart({ range, onRange }: { range: "14d" | "30d"; 
             </TabsTrigger>
             <button
               type="button"
-              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-[#0F1F1B] opacity-70 hover:bg-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-zinc-900 opacity-70 hover:bg-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
               onClick={() => toast.message("Custom range — coming soon")}
             >
               Custom

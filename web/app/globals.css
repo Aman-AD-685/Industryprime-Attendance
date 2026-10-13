@@ -1,26 +1,169 @@
 @import "tailwindcss";
 
+/* ──────────────────────────────────────────────────────────────
+   Industry Prime design system — "Jade Slate"
+   Every page uses zinc (neutral) + emerald (brand) utilities, so
+   re-tuning these scales re-skins the whole app without touching
+   page code. Keep hues here; pages keep their class names.
+   ────────────────────────────────────────────────────────────── */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Neutral: cool sage slate (replaces default zinc) */
+  --color-zinc-50: #f6f8f7;
+  --color-zinc-100: #eef2f0;
+  --color-zinc-200: #dde4e1;
+  --color-zinc-300: #c3cdc8;
+  --color-zinc-400: #93a19b;
+  --color-zinc-500: #67766f;
+  --color-zinc-600: #4d5b55;
+  --color-zinc-700: #3b4742;
+  --color-zinc-800: #232b28;
+  --color-zinc-900: #141a18;
+  --color-zinc-950: #0b100e;
+
+  /* Brand: jade (replaces default emerald) */
+  --color-emerald-50: #ecfaf4;
+  --color-emerald-100: #d2f4e5;
+  --color-emerald-200: #a8e8cd;
+  --color-emerald-300: #70d6ae;
+  --color-emerald-400: #39bd8a;
+  --color-emerald-500: #14a36f;
+  --color-emerald-600: #0b875b;
+  --color-emerald-700: #0a6c4a;
+  --color-emerald-800: #0b563d;
+  --color-emerald-900: #0a4733;
+  --color-emerald-950: #042a1e;
+
+  /* Soft layered elevation */
+  --shadow-sm: 0 1px 2px rgb(20 26 24 / 0.05), 0 1px 3px -1px rgb(20 26 24 / 0.06);
+  --shadow: 0 1px 2px rgb(20 26 24 / 0.05), 0 4px 12px -4px rgb(20 26 24 / 0.1);
+  --shadow-md: 0 2px 4px rgb(20 26 24 / 0.05), 0 8px 20px -6px rgb(20 26 24 / 0.12);
+  --shadow-lg: 0 4px 8px rgb(20 26 24 / 0.05), 0 16px 36px -10px rgb(20 26 24 / 0.18);
+  --shadow-xl: 0 8px 16px rgb(20 26 24 / 0.06), 0 28px 60px -16px rgb(20 26 24 / 0.24);
+  --shadow-2xl: 0 32px 80px -20px rgb(20 26 24 / 0.35);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f3f6f5;
+  --foreground: #141a18;
+  --app-glow-a: rgb(20 163 111 / 0.12);
+  --app-glow-b: rgb(14 165 233 / 0.08);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #0a0f0d;
+  --foreground: #e6ebe9;
+  --app-glow-a: rgb(20 163 111 / 0.16);
+  --app-glow-b: rgb(14 165 233 / 0.08);
+  color-scheme: dark;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Ambient brand glow: a fixed layer is far cheaper than background-attachment: fixed under blurred panels */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      radial-gradient(60rem 32rem at -5% -10%, var(--app-glow-a), transparent 60%),
+      radial-gradient(50rem 30rem at 105% 0%, var(--app-glow-b), transparent 60%);
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: var(--color-emerald-200);
+    color: var(--color-zinc-950);
+  }
+  .dark ::selection {
+    background: var(--color-emerald-800);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-emerald-500);
+    outline-offset: 2px;
+  }
+
+  input,
+  select,
+  textarea {
+    accent-color: var(--color-emerald-600);
+  }
+
+  table {
+    border-collapse: collapse;
+  }
+  th {
+    font-weight: 600;
+  }
+
+  /* Thin, theme-aware scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-zinc-300) transparent;
+  }
+  .dark * {
+    scrollbar-color: var(--color-zinc-700) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+    background-color: var(--color-zinc-300);
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background-color: var(--color-zinc-700);
+  }
+}
+
+/* Page transition: content fades/rises in on route change */
+@media (prefers-reduced-motion: no-preference) {
+  .page-enter {
+    animation: page-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes leave-decision-pop {

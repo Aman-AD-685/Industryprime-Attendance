@@ -25,3 +25,6 @@ web/.git.disabled/
 
 # Local-only pre-push guard (SKILL, memory, journals, audit reports — never commit)
 .cursor/local/
+
+# Claude Code (personal, not shared)
+.claude/settings.local.json

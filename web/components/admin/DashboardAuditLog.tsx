@@ -44,23 +44,23 @@ export function DashboardAuditLog() {
         <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {showSkeleton
             ? Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-16 animate-pulse rounded-xl bg-[#E5EAE8]" />
+                <div key={i} className="h-16 animate-pulse rounded-xl bg-zinc-200" />
               ))
             : events.map((e) => (
                 <button
                   key={e.id}
                   type="button"
                   onClick={() => setOpen(e)}
-                  className="min-w-0 rounded-xl border border-[#E5EAE8] bg-[#F7FAF9] px-3 py-2.5 text-left text-xs text-[#0F1F1B] transition hover:border-[#10B981] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                  className="min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-left text-xs text-zinc-900 transition hover:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                 >
-                  <span className="block font-mono text-[10px] text-[#7A8784]">
+                  <span className="block font-mono text-[10px] text-zinc-500">
                     {formatDistanceToNow(new Date(e.ts), { addSuffix: true })}
                   </span>
                   <span className="mt-1 block break-words">
                     <span className="font-semibold">{e.actor}</span>
-                    <span className="text-[#7A8784]"> · </span>
+                    <span className="text-zinc-500"> · </span>
                     {e.action}
-                    <span className="text-[#7A8784]"> · </span>
+                    <span className="text-zinc-500"> · </span>
                     <span className="break-all">{e.target}</span>
                   </span>
                 </button>
@@ -78,16 +78,16 @@ export function DashboardAuditLog() {
             onClick={(ev) => ev.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-2">
-              <h4 className="text-sm font-semibold text-[#0F1F1B]">Event detail</h4>
+              <h4 className="text-sm font-semibold text-zinc-900">Event detail</h4>
               <button
                 type="button"
-                className="text-sm font-medium text-[#10B981] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                className="text-sm font-medium text-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                 onClick={() => setOpen(null)}
               >
                 Close
               </button>
             </div>
-            <pre className="mt-3 max-h-[60vh] overflow-auto rounded-xl bg-[#0F1F1B] p-3 text-xs text-emerald-100">
+            <pre className="mt-3 max-h-[60vh] overflow-auto rounded-xl bg-zinc-900 p-3 text-xs text-emerald-100">
               {JSON.stringify(open, null, 2)}
             </pre>
           </div>

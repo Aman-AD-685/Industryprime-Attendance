@@ -290,8 +290,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   if (loadingSession || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white/60 dark:bg-zinc-950/40">
-        <div className="h-9 w-44 animate-pulse rounded-2xl bg-zinc-200/70 dark:bg-zinc-800/70" />
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4" role="status" aria-label="Loading">
+        <div className="relative flex h-14 w-14 items-center justify-center">
+          <span className="absolute inset-0 animate-spin rounded-full border-2 border-emerald-500/20 border-t-emerald-600 motion-reduce:animate-none" />
+          <span className="h-6 w-6 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow" />
+        </div>
+        <div className="h-2.5 w-28 animate-pulse rounded-full bg-zinc-200/80 dark:bg-zinc-800/80" />
       </div>
     );
   }
@@ -302,7 +306,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       onOpenMainSidebar={openMainSidebar}
       onCloseMainSidebar={closeMainSidebar}
     >
-      <div className="flex min-h-screen w-full flex-col bg-[var(--background)] text-[var(--foreground)]">
+      <div className="flex min-h-screen w-full flex-col text-[var(--foreground)]">
         {isSidebarOpen ? (
           <button
             type="button"
@@ -317,7 +321,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <Header isSidebarOpen={isSidebarOpen} onToggleSidebar={toggleSidebarFromUser} />
 
         <main
-          className={cn("relative z-10 mx-auto w-full flex-1 px-3 py-6 sm:px-6 sm:py-8 lg:px-8")}
+          className={cn("page-enter relative z-10 mx-auto w-full flex-1 px-3 py-6 sm:px-6 sm:py-8 lg:px-8")}
           aria-label="Page content"
         >
           {children}

@@ -41,10 +41,10 @@ export function PageHeader({ role }: { role: Role }) {
     <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-xl font-bold tracking-tight text-[#0F1F1B]">Attendance Overview</h2>
+          <h2 className="text-xl font-bold tracking-tight text-zinc-900">Attendance Overview</h2>
           <span
             className={cn(
-              "inline-flex items-center gap-1.5 text-xs font-medium text-[#10B981]",
+              "inline-flex items-center gap-1.5 text-xs font-medium text-emerald-500",
               !reduceMotion && isFetching && "opacity-80",
             )}
             title={rel ? `Last refresh ${rel}` : undefined}
@@ -54,19 +54,19 @@ export function PageHeader({ role }: { role: Role }) {
                 {!isFetching ? (
                   <>
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#10B981]" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                   </>
                 ) : (
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[#10B981]" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                 )}
               </span>
             ) : (
-              <span className="h-2 w-2 rounded-full bg-[#10B981]" aria-hidden />
+              <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
             )}
           </span>
         </div>
-        <p className="mt-1 text-sm font-medium leading-relaxed text-[#374151]">
-          Live data · Last refreshed <span className="font-semibold tabular-nums text-[#0F1F1B]">{time}</span>
+        <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-700">
+          Live data · Last refreshed <span className="font-semibold tabular-nums text-zinc-900">{time}</span>
         </p>
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:pl-2">

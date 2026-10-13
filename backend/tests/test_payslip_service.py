@@ -182,3 +182,78 @@ def test_gross_earned_full_when_month_complete() -> None:
         period_end=date(2026, 5, 31),
     )
     assert ps["earnings"]["gross_earned"] == 21_299.0
+
+
+def _emp() -> dict:
+    return {
+        "hra_monthly": None,
+        "conveyance_monthly": None,
+        "special_allowance_monthly": None,
+        "pf_employee_monthly": None,
+        "income_tax_tds_monthly": None,
+        "professional_tax": None,
+    }
+
+
+def test_salary_starts_from_first_attendance_upload_in_progress_month() -> None:
+    """Joined Oct 6, payroll checked Oct 18 → 13/30 paid; days 1–5 (incl. week-off) earn nothing."""
+    ps = compute_payslip(
+        _emp(),
+        month=10,
+        year=2026,
+        calendar_days=30,
+        present_days=9,
+        absent_attendance_days=0,
+        weekoff_days=2,
+        holiday_days=0,
+        salary_eligible_days=11,
+        monthly_salary=30_000.0,
+        lop_days=0,
+        period_end=date(2026, 10, 18),
+        period_start=date(2026, 10, 6),
+    )
+    assert ps["earnings_elapsed_factor"] == round(13 / 30, 6)
+    assert ps["earnings"]["salary"] == 13_000.0
+    assert ps["paid_salary_days"] == 25.0
+
+
+def test_salary_starts_from_first_attendance_upload_completed_month() -> None:
+    """Joined Oct 6, month complete → 25/30 of salary; 1 LOP day still deducted at daily rate."""
+    ps = compute_payslip(
+        _emp(),
+        month=10,
+        year=2026,
+        calendar_days=30,
+        present_days=20,
+        absent_attendance_days=1,
+        weekoff_days=4,
+        holiday_days=1,
+        salary_eligible_days=25,
+        monthly_salary=30_000.0,
+        lop_days=1,
+        period_end=date(2026, 10, 31),
+        period_start=date(2026, 10, 6),
+    )
+    assert ps["earnings"]["salary"] == 25_000.0
+    assert ps["deductions"]["lop_deduction"] == 1_000.0
+    assert ps["net_pay"] == 24_000.0
+    assert ps["paid_salary_days"] == 24.0
+
+
+def test_period_start_in_earlier_month_does_not_prorate() -> None:
+    ps = compute_payslip(
+        _emp(),
+        month=10,
+        year=2026,
+        calendar_days=30,
+        present_days=22,
+        absent_attendance_days=0,
+        weekoff_days=4,
+        holiday_days=0,
+        salary_eligible_days=26,
+        monthly_salary=30_000.0,
+        period_end=date(2026, 10, 31),
+        period_start=date(2026, 3, 6),
+    )
+    assert ps["earnings"]["salary"] == 30_000.0
+    assert ps["paid_salary_days"] == 30.0

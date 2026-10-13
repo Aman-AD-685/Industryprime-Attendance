@@ -16,10 +16,12 @@ import calendar
 import json
 import re
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from database.supabase_client import SupabaseRest
+from services.monthly_snapshot_cache import load_year_snapshots
 from services.working_hours import hhmm_value_to_minutes, minutes_to_hhmm_float
 
 
@@ -73,16 +75,12 @@ def _load_monthly_snapshots(
     year: int,
 ) -> Dict[str, List[Dict[str, Any]]]:
     out: Dict[str, List[Dict[str, Any]]] = {}
-    try:
-        snap_rows = supabase.select(
-            table="monthly_attendance",
-            select="employee_id,stored_data",
-            where_eq={"month": month, "year": year},
-            limit=5000,
-        )
-    except Exception:
-        return out
-    for sr in snap_rows or []:
+    for sr in load_year_snapshots(supabase, year):
+        try:
+            if int(sr.get("month") or 0) != int(month):
+                continue
+        except (TypeError, ValueError):
+            continue
         eid = str(sr.get("employee_id") or "")
         if eid in employee_ids:
             out[eid] = _normalize_stored_data(sr.get("stored_data"))
@@ -285,11 +283,17 @@ def compute_payroll_attendance_metrics(
     year: int,
     *,
     today: Optional[date] = None,
+    period_start_by_eid: Optional[Dict[str, date]] = None,
+    period_end_by_eid: Optional[Dict[str, date]] = None,
 ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
     """
     Returns (metrics_by_employee_id, raw_attendance_rows_by_employee_for_ui).
     metrics values: present_days, absent_days, weekoff_days, holiday_days,
-    salary_eligible_days, attendance_period_end (iso|None)
+    salary_eligible_days, attendance_period_start, attendance_period_end (iso|None)
+
+    ``period_start_by_eid`` (joining date / first attendance upload per employee) excludes
+    week-offs / holidays / absents before that date from every bucket; ``period_end_by_eid``
+    (left date) excludes days after it.
     """
     d = today or date.today()
     empty_m = {eid: _empty_metrics() for eid in employee_ids}
@@ -303,16 +307,19 @@ def compute_payroll_attendance_metrics(
         return empty_m, empty_r
 
     query_end_fetch = min(month_end, d)
-    holiday_names = _load_holidays_range(supabase, month_start, query_end_fetch)
-    att_all = _fetch_attendance_table_rows(supabase, month_start, query_end_fetch)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        fut_holidays = pool.submit(_load_holidays_range, supabase, month_start, query_end_fetch)
+        fut_rows = pool.submit(_fetch_attendance_table_rows, supabase, month_start, query_end_fetch)
+        fut_snaps = pool.submit(_load_monthly_snapshots, supabase, employee_ids, month, year)
+        holiday_names = fut_holidays.result()
+        att_all = fut_rows.result()
+        snaps = fut_snaps.result()
 
     by_eid_table: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for row in att_all or []:
         eid = str(row.get("employee_id") or "")
         if eid in employee_ids:
             by_eid_table[eid].append(row)
-
-    snaps = _load_monthly_snapshots(supabase, employee_ids, month, year)
 
     metrics: Dict[str, Dict[str, Any]] = {}
     rows_out: Dict[str, List[Dict[str, Any]]] = {}
@@ -322,11 +329,13 @@ def compute_payroll_attendance_metrics(
         merged = _rows_source_for_employee(table_rows, snaps.get(eid, []))
         dates_known = sorted(merged.keys())
         cap = _payroll_period_cap(month_start, month_end, d, table_rows, dates_known)
+        cap = min(cap, (period_end_by_eid or {}).get(eid) or cap)
+        start = max(month_start, (period_start_by_eid or {}).get(eid) or month_start)
 
         present = absent = weekoff = holiday = 0
         hours_total_minutes = 0
 
-        for day in _daterange(month_start, cap):
+        for day in _daterange(start, cap):
             row = merged.get(day)
             bucket = _classify_day(day, row, holiday_names)
             if bucket == "holiday":
@@ -339,7 +348,7 @@ def compute_payroll_attendance_metrics(
                 present += 1
 
         for dd, row in sorted(merged.items()):
-            if not (month_start <= dd <= cap):
+            if not (start <= dd <= cap):
                 continue
             wh = row.get("working_hours")
             if wh not in (None, ""):
@@ -356,6 +365,7 @@ def compute_payroll_attendance_metrics(
             "weekoff_days": weekoff,
             "holiday_days": holiday,
             "salary_eligible_days": salary_eligible,
+            "attendance_period_start": start.isoformat() if start <= cap else None,
             "attendance_period_end": cap.isoformat() if cap >= month_start else None,
             "calendar_days_in_month": cal_dim,
             "total_working_minutes": hours_total_minutes,
@@ -363,7 +373,7 @@ def compute_payroll_attendance_metrics(
         rows_out[eid] = [
             {"date": k.isoformat(), **{kk: vv for kk, vv in v.items() if kk != "date"}}
             for k, v in sorted(merged.items())
-            if month_start <= k <= cap
+            if start <= k <= cap
         ][:200]
 
     return metrics, rows_out
@@ -376,6 +386,7 @@ def _empty_metrics() -> Dict[str, Any]:
         "weekoff_days": 0,
         "holiday_days": 0,
         "salary_eligible_days": 0,
+        "attendance_period_start": None,
         "attendance_period_end": None,
         "calendar_days_in_month": 0,
         "total_working_minutes": 0,

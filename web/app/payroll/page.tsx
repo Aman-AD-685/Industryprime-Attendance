@@ -95,11 +95,14 @@ type PayrollItem = {
   total_days_present: number;
   total_days_absent: number;
   attendance_absent_days: number;
+  /** Half Day (0.5) / Full Day CL (1.0) deductions for late arrivals, from Oct 2026. */
+  late_cl_days?: number;
   weekoff_days?: number;
   holiday_days?: number;
   salary_eligible_days?: number;
   leave_covered_days?: number;
   lop_days?: number;
+  attendance_period_start?: string | null;
   attendance_period_end?: string | null;
   total_hours_in_office: number;
   total_sundays: number;
@@ -563,6 +566,7 @@ export default function PayrollPage() {
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <Metric tint="present" label="Present" value={item.total_days_present} />
                 <Metric tint="absent" label="Absent (month)" value={item.total_days_absent} />
+                <Metric tint="absent" label="Late CL (month)" value={item.late_cl_days ?? 0} />
                 <Metric tint="weekoff" label="Weekoff" value={item.weekoff_days ?? item.total_sundays ?? 0} />
                 <Metric tint="holiday" label="Holiday" value={item.holiday_days ?? item.holidays ?? 0} />
                 <Metric tint="salary" label="Salary days" value={item.salary_eligible_days ?? item.total_days_present} />
@@ -597,7 +601,13 @@ export default function PayrollPage() {
           </div>
           {selected.attendance_period_end ? (
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Attendance summarized through{" "}
+              Attendance summarized{" "}
+              {selected.attendance_period_start ? (
+                <>
+                  from <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">{selected.attendance_period_start}</span> (first attendance upload; earlier days unpaid){" "}
+                </>
+              ) : null}
+              through{" "}
               <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">{selected.attendance_period_end}</span> for{" "}
               {monthLabel(month, year)}.
             </p>

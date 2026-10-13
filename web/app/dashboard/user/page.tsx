@@ -55,16 +55,16 @@ export default function UserDashboardPage() {
 
   return (
     <RoleGuard allow={["user"]} role={role} fallback={<UnauthorizedEmployeeView />}>
-      <div className="min-h-[calc(100vh-4rem)] bg-[#F7FAF9] pb-32 text-[#0F1F1B] motion-reduce:transition-none lg:pb-12">
+      <div className="min-h-[calc(100vh-4rem)] bg-zinc-50 pb-32 text-zinc-900 motion-reduce:transition-none lg:pb-12">
         <div className="mx-auto max-w-[1100px] space-y-6">
           {isError ? (
             <div
-              className="rounded-2xl border border-[#F59E0B]/40 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+              className="rounded-2xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950"
               role="alert"
             >
               <span className="font-semibold">Could not refresh your data.</span>{" "}
               {error instanceof Error ? error.message : "Unknown error"}{" "}
-              <button type="button" className="font-semibold text-[#10B981] underline" onClick={() => void refetch()}>
+              <button type="button" className="font-semibold text-emerald-500 underline" onClick={() => void refetch()}>
                 Retry
               </button>
             </div>
@@ -84,12 +84,12 @@ export default function UserDashboardPage() {
           <div className="grid gap-6 lg:grid-cols-12">
             {skeleton ? (
               <>
-                <div className="h-72 animate-pulse rounded-2xl bg-[#E5EAE8]/80 lg:col-span-7" />
+                <div className="h-72 animate-pulse rounded-2xl bg-zinc-200/80 lg:col-span-7" />
                 <div className="lg:col-span-5">
                   <KpiStrip kpis={null} loading />
                 </div>
-                <div className="h-80 animate-pulse rounded-2xl bg-[#E5EAE8]/80 lg:col-span-8" />
-                <div className="h-80 animate-pulse rounded-2xl bg-[#E5EAE8]/80 lg:col-span-4" />
+                <div className="h-80 animate-pulse rounded-2xl bg-zinc-200/80 lg:col-span-8" />
+                <div className="h-80 animate-pulse rounded-2xl bg-zinc-200/80 lg:col-span-4" />
               </>
             ) : (
               <>
@@ -112,11 +112,11 @@ export default function UserDashboardPage() {
             )}
           </div>
 
-          <div className="mt-8 border-t border-[#E5EAE8] bg-white/90 px-4 py-3 shadow-[0_-1px_0_rgba(0,0,0,0.04)] sm:rounded-xl sm:border sm:shadow-sm">
-            <p className="text-center text-sm font-semibold leading-snug text-[#0F1F1B]">
+          <div className="mt-8 border-t border-zinc-200 bg-white/90 px-4 py-3 shadow-[0_-1px_0_rgba(0,0,0,0.04)] sm:rounded-xl sm:border sm:shadow-sm">
+            <p className="text-center text-sm font-semibold leading-snug text-zinc-900">
               Last updated{" "}
               <time
-                className="font-bold tabular-nums text-[#0F1F1B]"
+                className="font-bold tabular-nums text-zinc-900"
                 dateTime={lastIso ?? undefined}
               >
                 {lastIso
@@ -127,7 +127,7 @@ export default function UserDashboardPage() {
                     })
                   : "—"}
               </time>
-              <span className="mt-1 block text-[#374151] sm:mt-0 sm:inline">
+              <span className="mt-1 block text-zinc-700 sm:mt-0 sm:inline">
                 <span className="hidden sm:inline" aria-hidden>
                   {" "}
                   ·{" "}

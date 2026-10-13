@@ -77,7 +77,7 @@ export default function AddAttendanceHeaderLink({ variant = "default" }: AddAtte
         className={cn(
           "inline-flex shrink-0 items-center rounded-2xl px-2 py-1.5 text-xs font-semibold shadow-sm transition sm:px-3 sm:py-2 sm:text-sm",
           variant === "solid"
-            ? "gap-1 border border-emerald-600 bg-[#10B981] text-white hover:bg-emerald-600 dark:border-emerald-500 dark:hover:bg-emerald-500"
+            ? "gap-1 border border-emerald-600 bg-emerald-500 text-white hover:bg-emerald-600 dark:border-emerald-500 dark:hover:bg-emerald-500"
             : cn(
                 "border border-emerald-300 bg-white text-emerald-800",
                 "hover:border-emerald-400 hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-100 dark:hover:bg-emerald-900/50",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -24,6 +25,15 @@ class EmployeeCreate(BaseModel):
     )
     salary_effective_month: Optional[int] = Field(default=None, ge=1, le=12)
     salary_effective_year: Optional[int] = Field(default=None, ge=2000, le=2100)
+    total_leave: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description="Annual CL + SL allotment (days) for the current year; written to leave_balances.",
+    )
+    joining_date: Optional[date] = Field(
+        default=None,
+        description="Salary counts from this date (payroll/attendance ignore earlier days).",
+    )
 
 
 class EmployeeUpdate(BaseModel):
@@ -45,6 +55,15 @@ class EmployeeUpdate(BaseModel):
     )
     salary_effective_month: Optional[int] = Field(default=None, ge=1, le=12)
     salary_effective_year: Optional[int] = Field(default=None, ge=2000, le=2100)
+    total_leave: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description="Annual CL + SL allotment (days) for the current year; written to leave_balances.",
+    )
+    joining_date: Optional[date] = Field(
+        default=None,
+        description="Salary counts from this date (payroll/attendance ignore earlier days).",
+    )
 
 
 class EmployeeAllowancesSelfUpdate(BaseModel):
@@ -83,6 +102,9 @@ class EmployeeOut(BaseModel):
     employment_status: Optional[str] = "current"
     left_effective_month: Optional[int] = None
     left_effective_year: Optional[int] = None
+    joining_date: Optional[date] = None
+    left_date: Optional[date] = None
+    total_leave: Optional[float] = None
 
     model_config = {"extra": "ignore"}
 

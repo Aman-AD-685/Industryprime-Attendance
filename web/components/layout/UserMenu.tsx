@@ -35,12 +35,11 @@ export default function UserMenu() {
 
   const displayName = user?.name || "User";
   const displayEmail = user?.email || "user@industryprime.com";
-  const role = user?.role?.replace("_", " ") || "user";
   const avatar = displayName
     .split(" ")
     .map((part) => part[0])
     .join("")
-    .slice(0, 2)
+    .slice(0, 1)
     .toUpperCase();
 
   return (
@@ -48,19 +47,11 @@ export default function UserMenu() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white/70 px-3 py-2 shadow-sm backdrop-blur transition hover:bg-white dark:border-zinc-800 dark:bg-zinc-900/60"
+        className="inline-flex items-center rounded-xl transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
         aria-label="User menu"
       >
-        <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-sm font-semibold text-white">
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-sm font-semibold text-white shadow-sm ring-1 ring-white/30">
           {avatar}
-        </span>
-        <span className="hidden text-left sm:block">
-          <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            {displayName}
-          </span>
-          <span className="block text-xs capitalize text-zinc-500 dark:text-zinc-400">
-            {role}
-          </span>
         </span>
       </button>
 

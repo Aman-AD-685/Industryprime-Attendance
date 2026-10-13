@@ -156,6 +156,7 @@ def build_payslip_pdf_bytes(
     total_leave: Optional[float] = None,
     balance_leave: Optional[float] = None,
     period_end: Optional[date] = None,
+    period_start: Optional[date] = None,
 ) -> bytes:
     ps = compute_payslip(
         employee,
@@ -171,6 +172,7 @@ def build_payslip_pdf_bytes(
         leave_covered_days=leave_covered_days,
         lop_days=lop_days,
         period_end=period_end,
+        period_start=period_start,
     )
     disp = ps["display"]
     earn = ps["earnings"]

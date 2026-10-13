@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from database.supabase_client import SupabaseRest, get_supabase
-from services.hr_employees import EMPLOYEE_HR_SELECT
+from services.hr_employees import invalidate_employees_cache, select_all_employees
 
 
 def list_employees(
@@ -19,13 +19,7 @@ def list_employees(
     _ = tenant_id
     if supabase is None:
         supabase = get_supabase()
-    return supabase.select(
-        table="employees",
-        select=EMPLOYEE_HR_SELECT,
-        where_eq=None,
-        order="name.asc",
-        limit=5000,
-    )
+    return select_all_employees(supabase)
 
 
 def create_employee(
@@ -41,6 +35,7 @@ def create_employee(
         rows=[payload],
         return_representation=True,
     )
+    invalidate_employees_cache()
     if not rows:
         return {}
     return rows[0]
@@ -58,6 +53,7 @@ def update_employee(
         payload=payload,
         where_eq={"id": employee_id},
     )
+    invalidate_employees_cache()
     return row or {}
 
 

@@ -13,7 +13,7 @@ from services.hr_employees import (
     list_hr_employees,
 )
 
-from services.leave_balance_attendance_service import compute_absent_leave_used_by_months
+from services.leave_balance_attendance_service import compute_leave_attendance_days_by_months
 
 # Fallback annual entitlement when no `leave_balances` row exists (email not in map).
 DEFAULT_ANNUAL_TOTAL_LEAVE = 23.0
@@ -249,12 +249,17 @@ def list_leave_requests_for_tenant(
     if st not in {"", "all"} and st != "rejected":
         where_eq = {**(where_eq or {}), "status": st}
 
-    rows = _fetch(where_eq)
-    if not rows and tenant_id:
+    if tenant_id:
         # Existing leave rows may belong to a legacy tenant id created before
         # backend-owned auth started scoping tenant_id to the logged-in user id.
+        # The tenant-scoped query is almost always empty, so run both at once.
         legacy_where: Optional[Dict[str, Any]] = {"status": st} if st not in {"", "all"} and st != "rejected" else None
-        rows = _fetch(legacy_where)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fut_scoped = pool.submit(_fetch, where_eq)
+            fut_legacy = pool.submit(_fetch, legacy_where)
+            rows = fut_scoped.result() or fut_legacy.result()
+    else:
+        rows = _fetch(where_eq)
 
     out = rows or []
     if st == "rejected":
@@ -409,12 +414,17 @@ def list_leave_summary(
 
     emp_ids = set(employee_by_id.keys())
     months_to_load = list(range(1, month + 1))
-    counts_by_month, period_by_month = compute_absent_leave_used_by_months(
+    absent_by_month, _, period_by_month, late_cl_by_month = compute_leave_attendance_days_by_months(
         supabase,
         emp_ids,
         months_to_load,
         year,
     )
+    # Total Used = Absent days + late-arrival CL (Half Day 0.5 / Full Day CL 1.0).
+    counts_by_month = {
+        m: {eid: float(a) + float(late_cl_by_month[m].get(eid, 0)) for eid, a in counts.items()}
+        for m, counts in absent_by_month.items()
+    }
     month_counts = counts_by_month.get(month, {})
     period_cap = period_by_month.get(month, {})
 
@@ -448,6 +458,8 @@ def list_leave_summary(
                 "total_leave": float(snap["total_leave"]),
                 "total_used_leave": float(snap["total_used_leave"]),
                 "total_used": float(snap["total_used_leave"]),
+                "absent_days": float(absent_by_month.get(month, {}).get(emp_id, 0)),
+                "late_cl_days": float(late_cl_by_month.get(month, {}).get(emp_id, 0)),
                 "prior_used_from_may": prior_from_may,
                 "ytd_used_leave": float(snap["ytd_used_leave"]),
                 "balance_leave": float(snap["balance_leave"]),
