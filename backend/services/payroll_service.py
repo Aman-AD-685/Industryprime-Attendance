@@ -107,12 +107,15 @@ def summarize_payroll(
         Dict[int, Dict[str, Optional[str]]],
         Dict[int, Dict[str, float]],
     ]:
+        # Leave used / LOP must match the Leave page, which counts every snapshot day. Only the
+        # real joining date clips it: the first-`attendance`-row fallback lags behind
+        # `monthly_attendance.stored_data` and would silently drop earlier absents.
         return compute_leave_attendance_days_by_months(
             supabase,
             emp_id_set,
             list(range(1, month + 1)),
             year,
-            period_start_by_eid=starts_by_eid,
+            period_start_by_eid=joins_by_eid,
             period_end_by_eid=ends_by_eid,
         )
 
