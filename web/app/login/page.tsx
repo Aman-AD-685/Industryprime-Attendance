@@ -12,6 +12,7 @@ import {
   reconcileClientSession,
   scheduleAuthNavigationFallback,
 } from "@/lib/auth";
+import { directBrowserApiBase } from "@/lib/envApi";
 import { errorMessageForUser } from "@/lib/userFacingError";
 
 export default function LoginPage() {
@@ -23,6 +24,8 @@ export default function LoginPage() {
   const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
+    // Wake a sleeping Render instance while the user types, so the login POST lands warm.
+    void fetch(`${directBrowserApiBase().replace(/\/$/, "")}/health`).catch(() => undefined);
     reconcileClientSession();
     const cached = getStoredUser();
     if (cached && getStoredToken()) {
